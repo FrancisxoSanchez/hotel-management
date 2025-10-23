@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Enums based on your TS types ---
+
+enum UserRole {
+  cliente
+  operador
+  gerencia
+}
+
+enum ReservationStatus {
+  pendiente
+  confirmada
+  finalizada
+  cancelada
+}
+
+// --- Modelos de la Base de Datos ---
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String // En la vida real, guardarías un hash, no la contraseña
+  role      UserRole
+  name      String
+  phone     String?
+  createdAt DateTime @default(now())
+
+  // Relaciones: Un usuario puede tener muchas reservas
+  reservations Reservation[]
+
+  // Relaciones: Un operador/gerente puede atender muchas consultas
+  attendedConsultations Consultation[] @relation("AttendedBy")
+}
+
+// Traduje tu 'Room' a 'RoomType', ya que 'quantity'
+// indica que es un TIPO de habitación (ej: "Doble Standard")
+model RoomType {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  maxGuests   Int
+  basePrice   Float
+  images      String[] // Array de URLs de imágenes
+  isActive    Boolean  @default(true)
+
+  includesBreakfast Boolean
+  includesSpa       Boolean
+  quantity          Int // Cuántas habitaciones físicas de este tipo existen
+
+  // --- ESTE ES EL CAMPO NUEVO ---
+  // Para guardar ["Wi-Fi", "TV 55\"", "Minibar", etc.]
+  features    String[] @default([])
+
+  // Relaciones: Un tipo de habitación puede tener muchas reservas
+  reservations Reservation[]
+}
+
+model Amenity {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  images      String[]
+
+  // --- BORRAMOS ESTA LÍNEA ---
+  // roomTypes RoomType[] // Esta relación M2M ya no va
+}
+
+model Guest {
+  id    String @id @default(cuid())
+  name  String
+  dni   String @unique // DNI/Pasaporte, debería ser único
+  email String
+  phone String
+
+  // Relaciones: Un huésped puede estar en muchas reservas (M2M)
+  reservations Reservation[]
+}
+
+model Reservation {
+  id           String            @id @default(cuid())
+  checkInDate  DateTime
+  checkOutDate DateTime
+  status       ReservationStatus @default(pendiente)
+  totalPrice   Float
+  depositPaid  Float             @default(0)
+
+  // Opciones que el cliente eligió para esta reserva específica
+  includesBreakfast Boolean
+  includesSpa       Boolean
+
+  // El número de habitación físico (ej: 101, 204).
+  // Es opcional (?) porque se puede asignar al confirmar.
+  roomNumber Int?
+
+  createdAt   DateTime  @default(now())
+  cancelledAt DateTime?
+
+  // Relación con el tipo de habitación reservado
+  roomTypeId String
+  roomType   RoomType @relation(fields: [roomTypeId], references: [id])
+
+  // Relación con el usuario que hizo la reserva
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  // Relaciones: Una reserva tiene muchos huéspedes (M2M)
+  guests Guest[]
+}
+
+model Consultation {
+  id         String   @id @default(cuid())
+  email      String
+  message    String
+  response   String?
+  isAttended Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  attendedAt DateTime?
+
+  // Relación con el operador/gerente que respondió
+  attendedById String?
+  attendedBy   User?   @relation("AttendedBy", fields: [attendedById], references: [id])
+}

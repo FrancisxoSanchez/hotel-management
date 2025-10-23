@@ -1,0 +1,29 @@
+# Archivos de Next.js
+.next/
+out/
+
+# Dependencias
+node_modules/
+
+# Docker
+# Si tienes un volumen local de Docker, ignóralo
+# (El 'postgres-data' que definimos en docker-compose.yml es un volumen 'nombrado' de Docker,
+# por lo que no está en tu carpeta de proyecto. Pero si crearas uno local,
+# por ejemplo './data', lo agregarías aquí.)
+
+# Archivos de Prisma
+# Ignora el cliente generado (se reinstala)
+/node_modules/.prisma/client
+
+# ¡EL MÁS IMPORTANTE!
+# Archivos de entorno y secretos
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
