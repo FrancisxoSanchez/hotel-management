@@ -1,81 +1,136 @@
-"use client"
+"use client";
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-import type { User } from "./types"
-import { mockUsers } from "./mock-data"
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  type ReactNode,
+} from "react";
+// Importamos el tipo 'User' de tu archivo de tipos, pero
+// lo usaremos para definir nuestro 'SessionUser' sin contraseña.
+import type { User as AppUserType } from "./types";
+
+// Este será el tipo de usuario que manejamos en el frontend.
+// ¡Nunca debe incluir la contraseña!
+type SessionUser = Omit<AppUserType, "password">;
 
 interface AuthContextType {
-  user: User | null
-  login: (email: string, password: string) => Promise<boolean>
-  logout: () => void
-  register: (email: string, password: string, name: string, phone?: string) => Promise<boolean>
-  isLoading: boolean
+  user: SessionUser | null;
+  login: (email: string, password: string) => Promise<boolean>;
+  logout: () => void;
+  register: (
+    email: string,
+    password: string,
+    name: string,
+    phone?: string
+  ) => Promise<boolean>;
+  isLoading: boolean;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined)
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is logged in (from localStorage)
-    const storedUser = localStorage.getItem("hotel_user")
-    if (storedUser) {
-      setUser(JSON.parse(storedUser))
+    // Revisar si el usuario está logueado (desde localStorage)
+    try {
+      const storedUser = localStorage.getItem("hotel_user");
+      if (storedUser) {
+        setUser(JSON.parse(storedUser) as SessionUser);
+      }
+    } catch (error) {
+      console.error("Error al parsear usuario de localStorage:", error);
+      localStorage.removeItem("hotel_user");
     }
-    setIsLoading(false)
-  }, [])
+    setIsLoading(false);
+  }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    // Mock authentication
-    const foundUser = mockUsers.find((u) => u.email === email && u.password === password)
+    try {
+      const response = await fetch("/api/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
+      });
 
-    if (foundUser) {
-      setUser(foundUser)
-      localStorage.setItem("hotel_user", JSON.stringify(foundUser))
-      return true
+      if (!response.ok) {
+        // El servidor respondió con un error (ej: 401 Credenciales inválidas)
+        return false;
+      }
+
+      const { user }: { user: SessionUser } = await response.json();
+
+      if (user) {
+        setUser(user);
+        localStorage.setItem("hotel_user", JSON.stringify(user));
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error("Error al intentar iniciar sesión:", error);
+      return false;
     }
-
-    return false
-  }
+  };
 
   const logout = () => {
-    setUser(null)
-    localStorage.removeItem("hotel_user")
-  }
+    setUser(null);
+    localStorage.removeItem("hotel_user");
+    // Opcional: Redirigir al login
+    // window.location.href = "/login";
+  };
 
-  const register = async (email: string, password: string, name: string, phone?: string): Promise<boolean> => {
-    // Check if user already exists
-    const existingUser = mockUsers.find((u) => u.email === email)
-    if (existingUser) {
-      return false
+  const register = async (
+    email: string,
+    password: string,
+    name: string,
+    phone?: string
+  ): Promise<boolean> => {
+    try {
+      const response = await fetch("/api/register", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password, name, phone }),
+      });
+
+      if (!response.ok) {
+        // El servidor respondió con un error (ej: 409 Email en uso)
+        return false;
+      }
+
+      const { user }: { user: SessionUser } = await response.json();
+
+      if (user) {
+        setUser(user);
+        localStorage.setItem("hotel_user", JSON.stringify(user));
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error("Error al intentar registrarse:", error);
+      return false;
     }
+  };
 
-    // Create new user
-    const newUser: User = {
-      id: Date.now().toString(),
-      email,
-      password,
-      role: "cliente",
-      name,
-      phone,
-      createdAt: new Date(),
-    }
-
-    mockUsers.push(newUser)
-    setUser(newUser)
-    localStorage.setItem("hotel_user", JSON.stringify(newUser))
-    return true
-  }
-
-  return <AuthContext.Provider value={{ user, login, logout, register, isLoading }}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={{ user, login, logout, register, isLoading }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext)
+  const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider")
+    throw new Error("useAuth must be used within an AuthProvider");
   }
-  return context
+  return context;
 }

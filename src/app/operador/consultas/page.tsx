@@ -1,63 +1,75 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useToast } from "@/hooks/use-toast"
-import { useAuth } from "@/lib/auth-context"
-import type { Consultation } from "@/lib/types"
-import { format } from "date-fns"
-import { es } from "date-fns/locale"
-import { Mail, Send, CheckCircle, Clock } from "lucide-react"
+import { useState, useEffect } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth-context";
+import type { Consultation } from "@prisma/client";
+import { format, parseISO } from "date-fns";
+import { es } from "date-fns/locale";
+import { Mail, Send, CheckCircle, Clock, Loader2, AlertCircle } from "lucide-react";
 
-// Mock consultations data
-const mockConsultations: Consultation[] = [
-  {
-    id: "1",
-    email: "cliente@example.com",
-    message: "¿Tienen disponibilidad para la primera semana de enero?",
-    isAttended: false,
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
-  },
-  {
-    id: "2",
-    email: "juan@example.com",
-    message: "¿Aceptan mascotas? Tengo un perro pequeño.",
-    isAttended: false,
-    createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000),
-  },
-  {
-    id: "3",
-    email: "maria@example.com",
-    message: "¿Cuál es la política de cancelación?",
-    response:
-      "Puedes cancelar hasta 48 horas antes sin cargo. Después de ese plazo, se cobra el 50% de la primera noche.",
-    isAttended: true,
-    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    attendedAt: new Date(Date.now() - 23 * 60 * 60 * 1000),
-    attendedBy: "operador@hotel.com",
-  },
-]
+// Tipo de dato extendido para incluir el objeto 'attendedBy'
+type ConsultationWithAttendant = Consultation & {
+  attendedBy: {
+    id: string;
+    email: string;
+    name: string | null;
+  } | null;
+};
 
 export default function ConsultasOperadorPage() {
-  const { user } = useAuth()
-  const { toast } = useToast()
-  const [consultations, setConsultations] = useState(mockConsultations)
-  const [selectedConsultation, setSelectedConsultation] = useState<Consultation | null>(null)
-  const [response, setResponse] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const { user } = useAuth();
+  const { toast } = useToast();
+  
+  const [consultations, setConsultations] = useState<ConsultationWithAttendant[]>([]);
+  const [selectedConsultation, setSelectedConsultation] = useState<ConsultationWithAttendant | null>(null);
+  const [response, setResponse] = useState("");
+  
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const pendingConsultations = consultations.filter((c) => !c.isAttended)
-  const attendedConsultations = consultations.filter((c) => c.isAttended)
+  // Función para cargar los datos
+  const fetchConsultations = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/operador/consultas");
+      if (!res.ok) {
+        throw new Error("No se pudieron cargar las consultas");
+      }
+      const data: ConsultationWithAttendant[] = await res.json();
+      setConsultations(data);
+    } catch (err: any) {
+      setError(err.message);
+      toast({
+        title: "Error de Carga",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  const handleSelectConsultation = (consultation: Consultation) => {
-    setSelectedConsultation(consultation)
-    setResponse(consultation.response || "")
-  }
+  // Carga inicial de datos
+  useEffect(() => {
+    fetchConsultations();
+  }, []); // Dependencia vacía para que se ejecute solo al montar
+
+  const pendingConsultations = consultations.filter((c) => !c.isAttended);
+  const attendedConsultations = consultations.filter((c) => c.isAttended);
+
+  const handleSelectConsultation = (consultation: ConsultationWithAttendant) => {
+    setSelectedConsultation(consultation);
+    setResponse(consultation.response || "");
+  };
 
   const handleSubmitResponse = async () => {
     if (!selectedConsultation || !response.trim()) {
@@ -65,39 +77,81 @@ export default function ConsultasOperadorPage() {
         title: "Error",
         description: "Por favor escribe una respuesta",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
-    setIsSubmitting(true)
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    if (!user) {
+      toast({
+        title: "Error de Autenticación",
+        description: "No estás autenticado para realizar esta acción.",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    const updatedConsultations = consultations.map((c) =>
-      c.id === selectedConsultation.id
-        ? {
-            ...c,
-            response,
-            isAttended: true,
-            attendedAt: new Date(),
-            attendedBy: user?.email,
-          }
-        : c,
-    )
+    setIsSubmitting(true);
+    
+    try {
+      const res = await fetch(`/api/operador/consultas/${selectedConsultation.id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          response: response,
+          attendedById: user.id, // Enviar el ID del usuario logueado
+        }),
+      });
 
-    setConsultations(updatedConsultations)
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "No se pudo enviar la respuesta");
+      }
 
-    toast({
-      title: "Respuesta enviada",
-      description: "La consulta ha sido atendida exitosamente",
-    })
+      // Éxito: recargar los datos para refrescar las listas
+      await fetchConsultations();
+      
+      toast({
+        title: "Respuesta enviada",
+        description: "La consulta ha sido atendida exitosamente",
+      });
 
-    setSelectedConsultation(null)
-    setResponse("")
-    setIsSubmitting(false)
+      setSelectedConsultation(null);
+      setResponse("");
+
+    } catch (err: any) {
+      toast({
+        title: "Error al Enviar",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // --- Renderizado con estados de carga y error ---
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto flex h-[80vh] items-center justify-center px-16 py-8">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto flex h-[80vh] flex-col items-center justify-center px-16 py-8">
+        <AlertCircle className="h-12 w-12 text-destructive" />
+        <h2 className="mt-4 text-xl font-semibold text-destructive">Error al cargar Consultas</h2>
+        <p className="text-muted-foreground">{error}</p>
+        <Button onClick={fetchConsultations} className="mt-4">Reintentar</Button>
+      </div>
+    );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-16 py-8">
       <div className="mb-8">
         <h1 className="mb-2 text-3xl font-bold">Consultas</h1>
         <p className="text-muted-foreground">Gestiona y responde las consultas de los clientes</p>
@@ -149,7 +203,7 @@ export default function ConsultasOperadorPage() {
                           </div>
                           <p className="mb-2 line-clamp-2 text-sm text-muted-foreground">{consultation.message}</p>
                           <p className="text-xs text-muted-foreground">
-                            {format(consultation.createdAt, "d MMM yyyy, HH:mm", { locale: es })}
+                            {format(parseISO(consultation.createdAt as unknown as string), "d MMM yyyy, HH:mm", { locale: es })}
                           </p>
                         </button>
                       ))}
@@ -190,7 +244,7 @@ export default function ConsultasOperadorPage() {
                           </div>
                           <p className="mb-2 line-clamp-2 text-sm text-muted-foreground">{consultation.message}</p>
                           <p className="text-xs text-muted-foreground">
-                            Atendida el {format(consultation.attendedAt!, "d MMM yyyy", { locale: es })}
+                            Atendida el {format(parseISO(consultation.attendedAt! as unknown as string), "d MMM yyyy", { locale: es })}
                           </p>
                         </button>
                       ))}
@@ -231,7 +285,7 @@ export default function ConsultasOperadorPage() {
                   <div className="mb-4 flex items-center justify-between">
                     <Label className="text-sm font-medium">Fecha:</Label>
                     <span className="text-sm text-muted-foreground">
-                      {format(selectedConsultation.createdAt, "d MMM yyyy, HH:mm", { locale: es })}
+                      {format(parseISO(selectedConsultation.createdAt as unknown as string), "d MMM yyyy, HH:mm", { locale: es })}
                     </span>
                   </div>
                   <div className="rounded-lg border bg-muted/30 p-4">
@@ -256,10 +310,10 @@ export default function ConsultasOperadorPage() {
                 {selectedConsultation.isAttended && (
                   <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
                     <p className="text-sm text-green-900 dark:text-green-100">
-                      <strong>Atendida por:</strong> {selectedConsultation.attendedBy}
+                      <strong>Atendida por:</strong> {selectedConsultation.attendedBy?.email || "N/A"}
                       <br />
                       <strong>Fecha:</strong>{" "}
-                      {format(selectedConsultation.attendedAt!, "d MMM yyyy, HH:mm", { locale: es })}
+                      {format(parseISO(selectedConsultation.attendedAt! as unknown as string), "d MMM yyyy, HH:mm", { locale: es })}
                     </p>
                   </div>
                 )}
@@ -267,13 +321,11 @@ export default function ConsultasOperadorPage() {
                 {!selectedConsultation.isAttended && (
                   <Button onClick={handleSubmitResponse} className="w-full" size="lg" disabled={isSubmitting}>
                     {isSubmitting ? (
-                      "Enviando..."
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     ) : (
-                      <>
-                        <Send className="mr-2 h-4 w-4" />
-                        Enviar Respuesta
-                      </>
+                      <Send className="mr-2 h-4 w-4" />
                     )}
+                    {isSubmitting ? "Enviando..." : "Enviar Respuesta"}
                   </Button>
                 )}
               </CardContent>
@@ -282,5 +334,5 @@ export default function ConsultasOperadorPage() {
         </div>
       </div>
     </div>
-  )
+  );
 }

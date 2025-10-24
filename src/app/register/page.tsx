@@ -1,39 +1,47 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import Link from "next/link"
-import { useAuth } from "@/lib/auth-context"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { useToast } from "@/hooks/use-toast"
-import { Hotel } from "lucide-react"
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+// Corregido: Usar rutas relativas asumiendo que 'app' está en el root y 'lib' en 'src'
+import { useAuth } from "@/lib/auth-context";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { Hotel } from "lucide-react";
 
 export default function RegisterPage() {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [name, setName] = useState("")
-  const [phone, setPhone] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const { register } = useAuth()
-  const router = useRouter()
-  const { toast } = useToast()
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const { register } = useAuth();
+  const router = useRouter();
+  const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
 
     if (password !== confirmPassword) {
       toast({
         title: "Error",
         description: "Las contraseñas no coinciden",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
     if (password.length < 6) {
@@ -41,30 +49,32 @@ export default function RegisterPage() {
         title: "Error",
         description: "La contraseña debe tener al menos 6 caracteres",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
-    setIsLoading(true)
+    setIsLoading(true);
 
-    const success = await register(email, password, name, phone)
+    // La función register() de useAuth() ya está configurada
+    // para llamar a /api/register
+    const success = await register(email, password, name, phone);
 
     if (success) {
       toast({
         title: "Cuenta creada exitosamente",
         description: "Bienvenido a Hotel Grand Vista",
-      })
-      router.push("/")
+      });
+      router.push("/");
     } else {
       toast({
         title: "Error",
         description: "El email ya está registrado",
         variant: "destructive",
-      })
+      });
     }
 
-    setIsLoading(false)
-  }
+    setIsLoading(false);
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-secondary/20 to-background p-4">
@@ -74,7 +84,9 @@ export default function RegisterPage() {
             <Hotel className="h-8 w-8 text-primary-foreground" />
           </div>
           <CardTitle className="text-2xl font-bold">Crear Cuenta</CardTitle>
-          <CardDescription>Completa tus datos para registrarte como cliente</CardDescription>
+          <CardDescription>
+            Completa tus datos para registrarte como cliente
+          </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
@@ -87,6 +99,7 @@ export default function RegisterPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
+                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
@@ -98,6 +111,7 @@ export default function RegisterPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
@@ -108,6 +122,7 @@ export default function RegisterPage() {
                 placeholder="+54 11 1234-5678"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
@@ -119,6 +134,7 @@ export default function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
@@ -130,6 +146,7 @@ export default function RegisterPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
+                disabled={isLoading}
               />
             </div>
           </CardContent>
@@ -139,7 +156,12 @@ export default function RegisterPage() {
             </Button>
             <p className="text-center text-sm text-muted-foreground">
               {"¿Ya tienes una cuenta? "}
-              <Link href="/login" className="font-medium text-primary hover:underline">
+              <Link
+                href="/login"
+                className={`font-medium text-primary hover:underline ${
+                  isLoading ? "pointer-events-none opacity-50" : ""
+                }`}
+              >
                 Iniciar sesión
               </Link>
             </p>
@@ -147,5 +169,6 @@ export default function RegisterPage() {
         </form>
       </Card>
     </div>
-  )
+  );
 }
+

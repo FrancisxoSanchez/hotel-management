@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/lib/auth-context"
 import { ClientHeader } from "@/components/client-header"
 import { ClientFooter } from "@/components/client-footer"
+import 'react-day-picker/dist/style.css';
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth()

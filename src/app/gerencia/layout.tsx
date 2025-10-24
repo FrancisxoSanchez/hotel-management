@@ -1,21 +1,26 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { useAuth } from "@/lib/auth-context"
-import { ManagerHeader } from "@/components/manager-header"
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+// Corregido: Usar rutas relativas desde src/app/gerencia/dashboard/
+import { useAuth } from "@/lib/auth-context";
+import { ManagerHeader } from "@/components/manager-header";
 
-export default function GerenciaLayout({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth()
-  const router = useRouter()
+export default function GerenciaLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
 
   useEffect(() => {
     if (!isLoading && (!user || user.role !== "gerencia")) {
-      router.push("/login")
+      router.push("/login");
     }
-  }, [user, isLoading, router])
+  }, [user, isLoading, router]);
 
   if (isLoading) {
     return (
@@ -25,11 +30,11 @@ export default function GerenciaLayout({ children }: { children: React.ReactNode
           <p className="mt-4 text-muted-foreground">Cargando...</p>
         </div>
       </div>
-    )
+    );
   }
 
   if (!user || user.role !== "gerencia") {
-    return null
+    return null;
   }
 
   return (
@@ -37,5 +42,6 @@ export default function GerenciaLayout({ children }: { children: React.ReactNode
       <ManagerHeader />
       <main className="flex-1 bg-muted/30">{children}</main>
     </div>
-  )
+  );
 }
+

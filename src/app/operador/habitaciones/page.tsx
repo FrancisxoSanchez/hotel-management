@@ -1,11 +1,18 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,187 +24,349 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
-import { mockRooms } from "@/lib/mock-data"
-import type { Room } from "@/lib/types"
-import { Users, Wrench, Building2 } from "lucide-react"
+import { Users, Wrench, Building2, Sparkles, BedDouble, AlertCircle, Loader2 } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
-interface IndividualRoom {
-  roomNumber: string
+type RoomStatus = 'disponible' | 'ocupada' | 'mantenimiento' | 'limpieza'
+
+interface RoomData {
+  id: string
   floor: number
-  type: Room
-  isActive: boolean
+  status: RoomStatus
+  roomType: {
+    id: string
+    name: string
+    basePrice: number
+    maxGuests: number
+    images: string[]
+    isActive: boolean
+  }
+  activeReservations: number
 }
 
-function generateIndividualRooms(): IndividualRoom[] {
-  const rooms: IndividualRoom[] = []
-
-  // Asignar pisos según el tipo de habitación
-  const floorAssignments = [
-    { roomType: mockRooms.find((r) => r.name === "Habitación Individual")!, floor: 1 },
-    { roomType: mockRooms.find((r) => r.name === "Habitación Doble Standard")!, floor: 2 },
-    { roomType: mockRooms.find((r) => r.name === "Suite Ejecutiva")!, floor: 3 },
-    { roomType: mockRooms.find((r) => r.name === "Suite Familiar")!, floor: 4 },
-    { roomType: mockRooms.find((r) => r.name === "Suite Presidencial")!, floor: 5 },
-  ]
-
-  floorAssignments.forEach(({ roomType, floor }) => {
-    for (let i = 1; i <= roomType.quantity; i++) {
-      const roomNumber = `${floor}${i.toString().padStart(2, "0")}`
-      rooms.push({
-        roomNumber,
-        floor,
-        type: roomType,
-        isActive: roomType.isActive,
-      })
-    }
-  })
-
-  return rooms.sort((a, b) => a.roomNumber.localeCompare(b.roomNumber))
+const STATUS_CONFIG = {
+  disponible: {
+    label: 'Disponible',
+    color: 'bg-green-500',
+    variant: 'default' as const,
+    icon: BedDouble,
+  },
+  limpieza: {
+    label: 'En Limpieza',
+    color: 'bg-blue-500',
+    variant: 'secondary' as const,
+    icon: Sparkles,
+  },
+  mantenimiento: {
+    label: 'Mantenimiento',
+    color: 'bg-amber-500',
+    variant: 'outline' as const,
+    icon: Wrench,
+  },
+  ocupada: {
+    label: 'Ocupada',
+    color: 'bg-red-500',
+    variant: 'destructive' as const,
+    icon: Users,
+  },
 }
 
 export default function HabitacionesPage() {
   const { toast } = useToast()
-  const [individualRooms, setIndividualRooms] = useState<IndividualRoom[]>(generateIndividualRooms())
-  const [selectedRoom, setSelectedRoom] = useState<IndividualRoom | null>(null)
+  const [rooms, setRooms] = useState<RoomData[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [selectedRoom, setSelectedRoom] = useState<RoomData | null>(null)
+  const [newStatus, setNewStatus] = useState<RoomStatus>('disponible')
   const [showDialog, setShowDialog] = useState(false)
+  const [isUpdating, setIsUpdating] = useState(false)
 
-  const handleToggleRoom = (room: IndividualRoom) => {
+  // Cargar habitaciones
+  useEffect(() => {
+    fetchRooms()
+  }, [])
+
+  const fetchRooms = async () => {
+    setIsLoading(true)
+    try {
+      const response = await fetch('/api/operador/habitaciones')
+      if (!response.ok) {
+        throw new Error('Error al cargar habitaciones')
+      }
+      const data = await response.json()
+      setRooms(data.rooms)
+    } catch (error: any) {
+      console.error(error)
+      toast({
+        title: 'Error',
+        description: error.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleChangeStatus = (room: RoomData, status: RoomStatus) => {
     setSelectedRoom(room)
+    setNewStatus(status)
     setShowDialog(true)
   }
 
-  const confirmToggle = () => {
+  const confirmStatusChange = async () => {
     if (!selectedRoom) return
 
-    const updatedRooms = individualRooms.map((r) =>
-      r.roomNumber === selectedRoom.roomNumber ? { ...r, isActive: !r.isActive } : r,
-    )
-    setIndividualRooms(updatedRooms)
+    setIsUpdating(true)
 
-    toast({
-      title: selectedRoom.isActive ? "Habitación desactivada" : "Habitación activada",
-      description: selectedRoom.isActive
-        ? `Habitación ${selectedRoom.roomNumber} no estará disponible para nuevas reservas`
-        : `Habitación ${selectedRoom.roomNumber} está nuevamente disponible para reservas`,
-    })
+    try {
+      const response = await fetch(`/api/operador/habitaciones/${selectedRoom.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus }),
+      })
 
-    setShowDialog(false)
-    setSelectedRoom(null)
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || data.error || 'Error al actualizar')
+      }
+
+      // Actualizar lista local
+      setRooms(prev =>
+        prev.map(r =>
+          r.id === selectedRoom.id ? { ...r, status: newStatus } : r
+        )
+      )
+
+      toast({
+        title: 'Estado actualizado',
+        description: `Habitación ${selectedRoom.id} ahora está en estado: ${STATUS_CONFIG[newStatus].label}`,
+      })
+
+      setShowDialog(false)
+      setSelectedRoom(null)
+
+    } catch (error: any) {
+      console.error(error)
+      toast({
+        title: 'Error al actualizar',
+        description: error.message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsUpdating(false)
+    }
   }
 
-  const activeRooms = individualRooms.filter((r) => r.isActive).length
-  const inactiveRooms = individualRooms.filter((r) => !r.isActive).length
+  // Estadísticas
+  const stats = {
+    total: rooms.length,
+    disponible: rooms.filter(r => r.status === 'disponible').length,
+    limpieza: rooms.filter(r => r.status === 'limpieza').length,
+    mantenimiento: rooms.filter(r => r.status === 'mantenimiento').length,
+    ocupada: rooms.filter(r => r.status === 'ocupada').length,
+  }
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto flex h-[60vh] items-center justify-center px-4 py-8">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    )
+  }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-16 py-8">
       <div className="mb-8">
         <h1 className="mb-2 text-3xl font-bold">Gestión de Habitaciones</h1>
-        <p className="text-muted-foreground">Activa o desactiva habitaciones según necesidades de mantenimiento</p>
+        <p className="text-muted-foreground">
+          Administra el estado de las habitaciones físicas del hotel
+        </p>
       </div>
 
       {/* Stats */}
-      <div className="mb-8 grid gap-4 md:grid-cols-3">
+      <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total de Habitaciones</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{individualRooms.length}</div>
+            <div className="text-2xl font-bold">{stats.total}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Habitaciones Activas</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">Disponibles</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{activeRooms}</div>
+            <div className="text-2xl font-bold text-green-600">{stats.disponible}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium text-muted-foreground">En Mantenimiento</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">En Limpieza</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-amber-600">{inactiveRooms}</div>
+            <div className="text-2xl font-bold text-blue-600">{stats.limpieza}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Mantenimiento</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-amber-600">{stats.mantenimiento}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Ocupadas</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-red-600">{stats.ocupada}</div>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {individualRooms.map((room) => (
-          <Card key={room.roomNumber} className={!room.isActive ? "opacity-75" : ""}>
-            <div className="relative h-48 w-full">
-              <Image
-                src={room.type.images[0] || "/placeholder.svg"}
-                alt={`Habitación ${room.roomNumber}`}
-                fill
-                className="object-cover"
-              />
-              {!room.isActive && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-                  <Badge variant="destructive" className="flex items-center gap-1">
-                    <Wrench className="h-3 w-3" />
-                    En Mantenimiento
-                  </Badge>
-                </div>
-              )}
-            </div>
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  {/* Número de habitación como cabecera */}
-                  <CardTitle className="text-2xl font-bold">Hab. {room.roomNumber}</CardTitle>
-                  {/* Piso */}
-                  <div className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
-                    <Building2 className="h-3 w-3" />
-                    <span>Piso {room.floor}</span>
-                  </div>
-                </div>
-                <Badge variant="secondary" className="ml-2 flex items-center gap-1">
-                  <Users className="h-3 w-3" />
-                  {room.type.maxGuests}
-                </Badge>
-              </div>
-              {/* Tipo de habitación */}
-              <CardDescription className="mt-2 font-medium">{room.type.name}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Switch
-                    id={`room-${room.roomNumber}`}
-                    checked={room.isActive}
-                    onCheckedChange={() => handleToggleRoom(room)}
+      {rooms.length === 0 ? (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            No hay habitaciones registradas en el sistema. Crea habitaciones físicas en la base de datos.
+          </AlertDescription>
+        </Alert>
+      ) : (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {rooms.map((room) => {
+            const statusConfig = STATUS_CONFIG[room.status]
+            const StatusIcon = statusConfig.icon
+
+            return (
+              <Card key={room.id} className={room.status === 'mantenimiento' ? 'opacity-75' : ''}>
+                <div className="relative h-48 w-full">
+                  <Image
+                    src={room.roomType.images[0] || "/placeholder.svg"}
+                    alt={`Habitación ${room.id}`}
+                    fill
+                    className="object-cover"
                   />
-                  <Label htmlFor={`room-${room.roomNumber}`} className="cursor-pointer">
-                    {room.isActive ? "Activa" : "Inactiva"}
-                  </Label>
+                  <div className="absolute right-2 top-2">
+                    <Badge variant={statusConfig.variant} className="flex items-center gap-1">
+                      <StatusIcon className="h-3 w-3" />
+                      {statusConfig.label}
+                    </Badge>
+                  </div>
+                  {room.activeReservations > 0 && (
+                    <div className="absolute left-2 top-2">
+                      <Badge variant="secondary" className="bg-background/90 backdrop-blur">
+                        {room.activeReservations} reserva{room.activeReservations !== 1 ? 's' : ''}
+                      </Badge>
+                    </div>
+                  )}
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium">${room.type.basePrice.toLocaleString()}</p>
-                  <p className="text-xs text-muted-foreground">por noche</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
 
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <CardTitle className="text-2xl font-bold">Hab. {room.id}</CardTitle>
+                      <div className="mt-1 flex items-center gap-1 text-sm text-muted-foreground">
+                        <Building2 className="h-3 w-3" />
+                        <span>Piso {room.floor}</span>
+                      </div>
+                    </div>
+                    <Badge variant="secondary" className="ml-2 flex items-center gap-1">
+                      <Users className="h-3 w-3" />
+                      {room.roomType.maxGuests}
+                    </Badge>
+                  </div>
+                  <CardDescription className="mt-2 font-medium">
+                    {room.roomType.name}
+                  </CardDescription>
+                </CardHeader>
+
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Precio base:</span>
+                    <span className="font-medium">${room.roomType.basePrice.toLocaleString()}/noche</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor={`status-${room.id}`} className="text-xs">
+                      Cambiar estado
+                    </Label>
+                    <Select
+                      value={room.status}
+                      onValueChange={(value) => handleChangeStatus(room, value as RoomStatus)}
+                    >
+                      <SelectTrigger id={`status-${room.id}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="disponible">
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 w-2 rounded-full bg-green-500" />
+                            Disponible
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="limpieza">
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 w-2 rounded-full bg-blue-500" />
+                            En Limpieza
+                          </div>
+                        </SelectItem>
+                        <SelectItem value="mantenimiento">
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 w-2 rounded-full bg-amber-500" />
+                            Mantenimiento
+                          </div>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Dialog de confirmación */}
       <AlertDialog open={showDialog} onOpenChange={setShowDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {selectedRoom?.isActive ? "¿Desactivar habitación?" : "¿Activar habitación?"}
-            </AlertDialogTitle>
+            <AlertDialogTitle>Confirmar cambio de estado</AlertDialogTitle>
             <AlertDialogDescription>
-              {selectedRoom?.isActive
-                ? `La habitación ${selectedRoom.roomNumber} no estará disponible para nuevas reservas. Las reservas existentes no se verán afectadas.`
-                : `La habitación ${selectedRoom.roomNumber} estará nuevamente disponible para recibir reservas.`}
+              {selectedRoom && (
+                <>
+                  Vas a cambiar el estado de la habitación <strong>{selectedRoom.id}</strong> de{' '}
+                  <strong>{STATUS_CONFIG[selectedRoom.status].label}</strong> a{' '}
+                  <strong>{STATUS_CONFIG[newStatus].label}</strong>.
+                  {selectedRoom.activeReservations > 0 && (
+                    <Alert variant="destructive" className="mt-4">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>
+                        Esta habitación tiene {selectedRoom.activeReservations} reserva(s) activa(s).
+                        Considera esto antes de cambiar el estado.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmToggle}>Confirmar</AlertDialogAction>
+            <AlertDialogCancel disabled={isUpdating}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmStatusChange} disabled={isUpdating}>
+              {isUpdating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Actualizando...
+                </>
+              ) : (
+                'Confirmar'
+              )}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

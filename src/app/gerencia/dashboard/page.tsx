@@ -1,27 +1,100 @@
-"use client"
+"use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { mockRooms, mockUsers, mockReservations } from "@/lib/mock-data"
-import { Hotel, Users, Calendar, TrendingUp } from "lucide-react"
+import { useEffect, useState } from "react";
+// Corregido: Usar rutas relativas
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../../components/ui/card";
+import { Hotel, Users, Calendar, TrendingUp } from "lucide-react";
+
+// Definimos un tipo para las estadísticas que esperamos de la API
+interface DashboardStats {
+  totalRooms: number;
+  activeRooms: number;
+  totalOperators: number;
+  totalClients: number;
+  totalReservations: number;
+  confirmedReservations: number;
+  revenue: number;
+}
 
 export default function GerenciaDashboardPage() {
-  const stats = {
-    totalRooms: mockRooms.length,
-    activeRooms: mockRooms.filter((r) => r.isActive).length,
-    totalOperators: mockUsers.filter((u) => u.role === "operador").length,
-    totalClients: mockUsers.filter((u) => u.role === "cliente").length,
-    totalReservations: mockReservations.length,
-    confirmedReservations: mockReservations.filter((r) => r.status === "confirmada").length,
-    revenue: mockReservations
-      .filter((r) => r.status === "confirmada" || r.status === "finalizada")
-      .reduce((sum, r) => sum + r.totalPrice, 0),
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        // NOTA: Asegúrate de que esta API route exista
+        const response = await fetch("/api/gerencia/dashboard");
+        if (!response.ok) {
+          throw new Error("Error al cargar los datos del dashboard");
+        }
+        const data = await response.json();
+        // Asumiendo que la API devuelve { stats: { ... } }
+        setStats(data.stats);
+      } catch (err) {
+        setError(
+          err instanceof Error ? err.message : "Ocurrió un error desconocido"
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, []);
+
+  // Estado de Carga
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[calc(100vh-80px)] items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+          <p className="mt-4 text-lg text-muted-foreground">
+            Cargando estadísticas...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado de Error
+  if (error) {
+    return (
+      <div className="flex min-h-[calc(100vh-80px)] items-center justify-center">
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-8 text-center text-destructive">
+          <h2 className="mb-4 text-2xl font-bold">Error</h2>
+          <p>{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Estado Exitoso (stats no es null)
+  if (!stats) {
+    // Esto no debería pasar si isLoading es false y no hay error, pero es una buena práctica
+    return (
+      <div className="text-center">
+        No se encontraron datos.
+      </div>
+    );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-16 py-8">
       <div className="mb-8">
         <h1 className="mb-2 text-3xl font-bold">Dashboard de Gerencia</h1>
-        <p className="text-muted-foreground">Resumen general del hotel y métricas clave</p>
+        <p className="text-muted-foreground">
+          Resumen general del hotel y métricas clave
+        </p>
       </div>
 
       {/* Stats Grid */}
@@ -33,7 +106,9 @@ export default function GerenciaDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalRooms}</div>
-            <p className="text-xs text-muted-foreground">{stats.activeRooms} activas</p>
+            <p className="text-xs text-muted-foreground">
+              {stats.activeRooms} activas
+            </p>
           </CardContent>
         </Card>
 
@@ -44,7 +119,9 @@ export default function GerenciaDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalOperators}</div>
-            <p className="text-xs text-muted-foreground">{stats.totalClients} clientes registrados</p>
+            <p className="text-xs text-muted-foreground">
+              {stats.totalClients} clientes registrados
+            </p>
           </CardContent>
         </Card>
 
@@ -55,7 +132,9 @@ export default function GerenciaDashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalReservations}</div>
-            <p className="text-xs text-muted-foreground">{stats.confirmedReservations} confirmadas</p>
+            <p className="text-xs text-muted-foreground">
+              {stats.confirmedReservations} confirmadas
+            </p>
           </CardContent>
         </Card>
 
@@ -65,18 +144,22 @@ export default function GerenciaDashboardPage() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${(stats.revenue / 1000).toFixed(0)}K</div>
+            <div className="text-2xl font-bold">
+              ${(stats.revenue / 1000).toFixed(0)}K
+            </div>
             <p className="text-xs text-muted-foreground">Total acumulado</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Quick Actions */}
+      {/* Quick Actions (sin cambios) */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>Gestión de Habitaciones</CardTitle>
-            <CardDescription>Administra el inventario de habitaciones del hotel</CardDescription>
+            <CardDescription>
+              Administra el inventario de habitaciones del hotel
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 text-sm">
@@ -91,7 +174,9 @@ export default function GerenciaDashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle>Gestión de Operadores</CardTitle>
-            <CardDescription>Administra el equipo de operadores del hotel</CardDescription>
+            <CardDescription>
+              Administra el equipo de operadores del hotel
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2 text-sm">
@@ -104,5 +189,5 @@ export default function GerenciaDashboardPage() {
         </Card>
       </div>
     </div>
-  )
+  );
 }

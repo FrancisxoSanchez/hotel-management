@@ -1,9 +1,8 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import Image from "next/image"
-import { format, differenceInDays } from "date-fns"
+import { useState, useEffect, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { format, differenceInDays, isValid } from "date-fns"
 import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,55 +12,104 @@ import { Separator } from "@/components/ui/separator"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { useToast } from "@/hooks/use-toast"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useToast } from "@/components/ui/use-toast"
 import { useAuth } from "@/lib/auth-context"
-import { mockRooms, mockReservations } from "@/lib/mock-data"
-import type { Guest } from "@/lib/types"
-import { ArrowLeft, ArrowRight, CalendarIcon, CreditCard, Check } from "lucide-react"
+import type { RoomDetailData } from "@/prisma/detallehabitacion"
+import {
+  BREAKFAST_PRICE_PER_NIGHT_PER_GUEST,
+  SPA_PRICE_PER_GUEST,
+} from "@/lib/constant"
+import { ArrowLeft, ArrowRight, CalendarIcon, CreditCard, Check, Loader2, Info } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-const BREAKFAST_PRICE = 2000
-const SPA_PRICE = 5000
+interface GuestInput {
+  name: string;
+  dni: string;
+  email: string;
+  phone: string;
+}
 
-export default function ReservarPage({ params }: { params: { id: string } }) {
+function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
   const router = useRouter()
-  const { user } = useAuth()
+  const searchParams = useSearchParams()
+  const { user, isLoading: isAuthLoading } = useAuth()
   const { toast } = useToast()
 
-  const room = mockRooms.find((r) => r.id === params.id)
-
+  const [room, setRoom] = useState<RoomDetailData | null>(null)
+  const [isLoadingRoom, setIsLoadingRoom] = useState(true)
   const [step, setStep] = useState(1)
+  
+  const [checkInDate, setCheckInDate] = useState<Date | undefined>(() => {
+    const checkIn = searchParams.get("checkIn")
+    const date = checkIn ? new Date(checkIn) : undefined;
+    return date && isValid(date) ? date : undefined;
+  })
+  const [checkOutDate, setCheckOutDate] = useState<Date | undefined>(() => {
+    const checkOut = searchParams.get("checkOut")
+    const date = checkOut ? new Date(checkOut) : undefined;
+    return date && isValid(date) ? date : undefined;
+  })
+  
   const [guestCount, setGuestCount] = useState(1)
-  const [checkInDate, setCheckInDate] = useState<Date>()
-  const [checkOutDate, setCheckOutDate] = useState<Date>()
-  const [guests, setGuests] = useState<Partial<Guest>[]>([{ name: "", dni: "", email: "", phone: "" }])
+  const [guests, setGuests] = useState<Partial<GuestInput>[]>([
+    { name: "", dni: "", email: "", phone: "" },
+  ])
   const [includesBreakfast, setIncludesBreakfast] = useState(false)
   const [includesSpa, setIncludesSpa] = useState(false)
+  
   const [cardNumber, setCardNumber] = useState("")
   const [cardName, setCardName] = useState("")
   const [cardExpiry, setCardExpiry] = useState("")
   const [cardCvv, setCardCvv] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
 
-  if (!room) {
-    return (
-      <div className="container mx-auto px-4 py-12">
-        <Card className="p-12 text-center">
-          <p className="text-lg text-muted-foreground">Habitación no encontrada</p>
-          <Button onClick={() => router.push("/cliente/habitaciones")} variant="outline" className="mt-4">
-            Volver a habitaciones
-          </Button>
-        </Card>
-      </div>
-    )
-  }
+  // Cargar datos de la habitación desde la API
+  useEffect(() => {
+    if (roomTypeId) {
+      setIsLoadingRoom(true)
+      fetch(`/api/cliente/habitaciones/${roomTypeId}`)
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error("Habitación no encontrada o no disponible")
+          }
+          return res.json()
+        })
+        .then((data: RoomDetailData) => {
+          setRoom(data)
+          if (data.maxGuests < guestCount) {
+             setGuestCount(data.maxGuests)
+          }
+        })
+        .catch((err) => {
+          console.error(err)
+          toast({
+            title: "Error",
+            description: err.message,
+            variant: "destructive",
+          })
+          setRoom(null)
+        })
+        .finally(() => {
+          setIsLoadingRoom(false)
+        })
+    }
+  }, [roomTypeId, toast])
 
   const calculateTotal = () => {
-    if (!checkInDate || !checkOutDate) return 0
+    if (!room || !checkInDate || !checkOutDate || checkOutDate <= checkInDate) return 0
+    
     const nights = differenceInDays(checkOutDate, checkInDate)
+    if (nights <= 0) return 0;
+
     let total = room.basePrice * nights
-    if (includesBreakfast) total += BREAKFAST_PRICE * nights * guestCount
-    if (includesSpa) total += SPA_PRICE * guestCount
+    
+    if (includesBreakfast) {
+      total += BREAKFAST_PRICE_PER_NIGHT_PER_GUEST * nights * guestCount
+    }
+    if (includesSpa) {
+      total += SPA_PRICE_PER_GUEST * guestCount
+    }
     return total
   }
 
@@ -76,11 +124,20 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
       })
       return
     }
-
-    if (guestCount > room.maxGuests) {
+    
+    if (checkOutDate <= checkInDate) {
       toast({
         title: "Error",
-        description: `Esta habitación permite máximo ${room.maxGuests} huéspedes`,
+        description: "La fecha de salida debe ser posterior a la de entrada",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (guestCount > room!.maxGuests) {
+      toast({
+        title: "Error",
+        description: `Esta habitación permite máximo ${room!.maxGuests} huéspedes`,
         variant: "destructive",
       })
       return
@@ -95,13 +152,18 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
       return
     }
 
-    // Initialize guests array
-    setGuests(Array.from({ length: guestCount }, () => ({ name: "", dni: "", email: "", phone: "" })))
+    setGuests(
+      Array.from({ length: guestCount }, () => ({
+        name: "",
+        dni: "",
+        email: "",
+        phone: "",
+      }))
+    )
     setStep(2)
   }
 
   const handleStep2Next = () => {
-    // Validate all guests have required data
     for (let i = 0; i < guests.length; i++) {
       const guest = guests[i]
       if (!guest.name || !guest.dni || !guest.email || !guest.phone) {
@@ -117,6 +179,15 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
   }
 
   const handlePayment = async () => {
+    if (!user) {
+      toast({
+        title: "Error",
+        description: "Debes iniciar sesión para completar la reserva",
+        variant: "destructive",
+      })
+      return;
+    }
+
     if (!cardNumber || !cardName || !cardExpiry || !cardCvv) {
       toast({
         title: "Error",
@@ -128,71 +199,136 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
 
     setIsProcessing(true)
 
-    // Simulate payment processing
-    await new Promise((resolve) => setTimeout(resolve, 2000))
+    await new Promise((resolve) => setTimeout(resolve, 1500))
 
-    // Create reservation
-    const newReservation = {
-      id: Date.now().toString(),
-      roomId: room.id,
-      userId: user!.id,
-      guests: guests as Guest[],
-      checkInDate: checkInDate!,
-      checkOutDate: checkOutDate!,
-      status: "pendiente" as const,
-      totalPrice,
-      depositPaid: totalPrice, // Ahora se paga el total completo
-      includesBreakfast,
-      includesSpa,
-      createdAt: new Date(),
+    const reservationData = {
+      userId: user.id,
+      roomTypeId: room!.id,
+      checkIn: checkInDate!.toISOString(),
+      checkOut: checkOutDate!.toISOString(),
+      guests: guests as GuestInput[],
+      includesBreakfast: includesBreakfast,
+      includesSpa: includesSpa,
+      totalPrice: totalPrice,
     }
 
-    mockReservations.push(newReservation)
+    try {
+      const response = await fetch("/api/cliente/reservar", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(reservationData),
+      })
 
-    toast({
-      title: "¡Reserva exitosa!",
-      description: "Tu reserva ha sido confirmada",
-    })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || "No se pudo crear la reserva")
+      }
 
-    setIsProcessing(false)
-    router.push("/cliente/mis-reservas")
+      const result = await response.json()
+
+      toast({
+        title: "¡Reserva exitosa!",
+        description: `Se te asignó la habitación ${result.reservation.roomId}. Redirigiendo...`,
+      })
+
+      router.push("/cliente/mis-reservas")
+
+    } catch (error: any) {
+      console.error("[RESERVATION_SUBMIT_ERROR]", error)
+      toast({
+        title: "Error al reservar",
+        description: error.message || "Ocurrió un problema. Intenta de nuevo.",
+        variant: "destructive",
+      })
+      setIsProcessing(false)
+    }
   }
 
-  const updateGuest = (index: number, field: keyof Guest, value: string) => {
+  const updateGuest = (index: number, field: keyof GuestInput, value: string) => {
     const newGuests = [...guests]
     newGuests[index] = { ...newGuests[index], [field]: value }
     setGuests(newGuests)
   }
 
+  if (isLoadingRoom || isAuthLoading) {
+    return (
+      <div className="container mx-auto flex h-[60vh] items-center justify-center px-4 py-12">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (!room) {
+    return (
+      <div className="container mx-auto px-16 py-12">
+        <Card className="p-12 text-center">
+          <CardHeader>
+            <CardTitle>Habitación no encontrada</CardTitle>
+            <CardDescription>
+              La habitación que buscas no existe o no está disponible.
+            </CardDescription>
+          </CardHeader>
+          <Button
+            onClick={() => router.push("/cliente/habitaciones")}
+            variant="outline"
+            className="mt-4"
+          >
+            Volver a habitaciones
+          </Button>
+        </Card>
+      </div>
+    )
+  }
+
   return (
-    <div className="container mx-auto px-4 py-12">
-      <Button onClick={() => (step === 1 ? router.back() : setStep(step - 1))} variant="ghost" className="mb-6">
+    <div className="container mx-auto px-16 py-12">
+      <Button
+        onClick={() => (step === 1 ? router.back() : setStep(step - 1))}
+        variant="ghost"
+        className="mb-6"
+      >
         <ArrowLeft className="mr-2 h-4 w-4" />
         {step === 1 ? "Volver" : "Paso anterior"}
       </Button>
 
       <div className="grid gap-8 lg:grid-cols-3">
-        {/* Main Content */}
         <div className="lg:col-span-2">
           <div className="mb-6">
             <h1 className="mb-2 text-3xl font-bold">Reservar Habitación</h1>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span className={cn("font-medium", step >= 1 && "text-primary")}>1. Fechas y huéspedes</span>
+              <span className={cn("font-medium", step >= 1 && "text-primary")}>
+                1. Fechas y huéspedes
+              </span>
               <span>→</span>
-              <span className={cn("font-medium", step >= 2 && "text-primary")}>2. Datos de huéspedes</span>
+              <span className={cn("font-medium", step >= 2 && "text-primary")}>
+                2. Datos de huéspedes
+              </span>
               <span>→</span>
-              <span className={cn("font-medium", step >= 3 && "text-primary")}>3. Pago</span>
+              <span className={cn("font-medium", step >= 3 && "text-primary")}>
+                3. Pago
+              </span>
             </div>
           </div>
 
-          {/* Step 1: Dates and Guest Count */}
+          {/* Paso 1 */}
           {step === 1 && (
             <Card>
               <CardHeader>
                 <CardTitle>Selecciona fechas y cantidad de huéspedes</CardTitle>
-                <CardDescription>Elige las fechas de tu estadía y cuántas personas se hospedarán</CardDescription>
+                <CardDescription>
+                  Elige las fechas de tu estadía y cuántas personas se hospedarán
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertDescription>
+                    Se te asignará automáticamente una habitación disponible al confirmar la reserva
+                  </AlertDescription>
+                </Alert>
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label>Fecha de entrada</Label>
@@ -202,7 +338,7 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                           variant="outline"
                           className={cn(
                             "w-full justify-start text-left font-normal",
-                            !checkInDate && "text-muted-foreground",
+                            !checkInDate && "text-muted-foreground"
                           )}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
@@ -214,7 +350,7 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                           mode="single"
                           selected={checkInDate}
                           onSelect={setCheckInDate}
-                          disabled={(date) => date < new Date()}
+                          disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
                           initialFocus
                         />
                       </PopoverContent>
@@ -228,7 +364,7 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                           variant="outline"
                           className={cn(
                             "w-full justify-start text-left font-normal",
-                            !checkOutDate && "text-muted-foreground",
+                            !checkOutDate && "text-muted-foreground"
                           )}
                         >
                           <CalendarIcon className="mr-2 h-4 w-4" />
@@ -265,18 +401,22 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                       min={1}
                       max={room.maxGuests}
                       value={guestCount}
-                      onChange={(e) => setGuestCount(Number.parseInt(e.target.value) || 1)}
+                      onChange={(e) => setGuestCount(Math.max(1, Math.min(room.maxGuests, Number.parseInt(e.target.value) || 1)))}
                       className="w-20 text-center"
                     />
                     <Button
                       type="button"
                       variant="outline"
                       size="icon"
-                      onClick={() => setGuestCount(Math.min(room.maxGuests, guestCount + 1))}
+                      onClick={() =>
+                        setGuestCount(Math.min(room.maxGuests, guestCount + 1))
+                      }
                     >
                       +
                     </Button>
-                    <span className="text-sm text-muted-foreground">Máximo: {room.maxGuests}</span>
+                    <span className="text-sm text-muted-foreground">
+                      Máximo: {room.maxGuests}
+                    </span>
                   </div>
                 </div>
 
@@ -288,26 +428,30 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                     <Checkbox
                       id="breakfast"
                       checked={includesBreakfast}
-                      onCheckedChange={(checked) => setIncludesBreakfast(checked as boolean)}
+                      onCheckedChange={(checked) =>
+                        setIncludesBreakfast(checked as boolean)
+                      }
                     />
                     <label
                       htmlFor="breakfast"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                     >
-                      Incluir desayuno buffet (+${BREAKFAST_PRICE.toLocaleString()} por persona por noche)
+                      Incluir desayuno buffet (+${BREAKFAST_PRICE_PER_NIGHT_PER_GUEST.toLocaleString()} por persona por noche)
                     </label>
                   </div>
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="spa"
                       checked={includesSpa}
-                      onCheckedChange={(checked) => setIncludesSpa(checked as boolean)}
+                      onCheckedChange={(checked) =>
+                        setIncludesSpa(checked as boolean)
+                      }
                     />
                     <label
                       htmlFor="spa"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                     >
-                      Incluir acceso al spa (+${SPA_PRICE.toLocaleString()} por persona)
+                      Incluir acceso al spa (+${SPA_PRICE_PER_GUEST.toLocaleString()} por persona)
                     </label>
                   </div>
                 </div>
@@ -320,12 +464,14 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
             </Card>
           )}
 
-          {/* Step 2: Guest Information */}
+          {/* Paso 2 */}
           {step === 2 && (
             <Card>
               <CardHeader>
                 <CardTitle>Datos de los huéspedes</CardTitle>
-                <CardDescription>Ingresa la información de cada persona que se hospedará</CardDescription>
+                <CardDescription>
+                  Ingresa la información de cada persona que se hospedará
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 {guests.map((guest, index) => (
@@ -339,7 +485,9 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                         <Input
                           id={`name-${index}`}
                           value={guest.name}
-                          onChange={(e) => updateGuest(index, "name", e.target.value)}
+                          onChange={(e) =>
+                            updateGuest(index, "name", e.target.value)
+                          }
                           placeholder="Juan Pérez"
                           required
                         />
@@ -349,7 +497,9 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                         <Input
                           id={`dni-${index}`}
                           value={guest.dni}
-                          onChange={(e) => updateGuest(index, "dni", e.target.value)}
+                          onChange={(e) =>
+                            updateGuest(index, "dni", e.target.value)
+                          }
                           placeholder="12345678"
                           required
                         />
@@ -360,7 +510,9 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                           id={`email-${index}`}
                           type="email"
                           value={guest.email}
-                          onChange={(e) => updateGuest(index, "email", e.target.value)}
+                          onChange={(e) =>
+                            updateGuest(index, "email", e.target.value)
+                          }
                           placeholder="juan@email.com"
                           required
                         />
@@ -371,7 +523,9 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                           id={`phone-${index}`}
                           type="tel"
                           value={guest.phone}
-                          onChange={(e) => updateGuest(index, "phone", e.target.value)}
+                          onChange={(e) =>
+                            updateGuest(index, "phone", e.target.value)
+                          }
                           placeholder="+54 11 1234-5678"
                           required
                         />
@@ -388,13 +542,14 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
             </Card>
           )}
 
-          {/* Step 3: Payment */}
+          {/* Paso 3 */}
           {step === 3 && (
             <Card>
               <CardHeader>
                 <CardTitle>Pago Total</CardTitle>
                 <CardDescription>
-                  Completa el pago de ${totalPrice.toLocaleString()} para confirmar tu reserva.
+                  Completa el pago de ${totalPrice.toLocaleString('es-AR')} para confirmar tu
+                  reserva.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -450,13 +605,21 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                   </div>
                 </div>
 
-                <Button onClick={handlePayment} className="w-full" size="lg" disabled={isProcessing}>
+                <Button
+                  onClick={handlePayment}
+                  className="w-full"
+                  size="lg"
+                  disabled={isProcessing}
+                >
                   {isProcessing ? (
-                    "Procesando pago..."
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Procesando pago...
+                    </>
                   ) : (
                     <>
                       <CreditCard className="mr-2 h-4 w-4" />
-                      Pagar ${totalPrice.toLocaleString()}
+                      Pagar ${totalPrice.toLocaleString('es-AR')}
                     </>
                   )}
                 </Button>
@@ -465,38 +628,51 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
           )}
         </div>
 
-        {/* Summary Sidebar */}
+        {/* Sidebar de Resumen */}
         <div className="lg:col-span-1">
-          <Card className="sticky top-4">
+          <Card className="sticky top-20">
             <CardHeader>
               <CardTitle className="text-lg">Resumen de reserva</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="relative h-48 overflow-hidden rounded-lg">
-                <Image src={room.images[0] || "/placeholder.svg"} alt={room.name} fill className="object-cover" />
+                <img
+                  src={room.images[0] || 'https://placehold.co/600x400/EEE/333?text=Habitacion'}
+                  alt={room.name}
+                  className="absolute inset-0 h-full w-full object-cover"
+                  loading="lazy"
+                />
               </div>
 
               <div>
                 <h3 className="font-semibold">{room.name}</h3>
-                <p className="text-sm text-muted-foreground">Hasta {room.maxGuests} huéspedes</p>
+                <p className="text-sm text-muted-foreground">
+                  Hasta {room.maxGuests} huéspedes
+                </p>
               </div>
 
               <Separator />
 
-              {checkInDate && checkOutDate && (
+              {checkInDate && checkOutDate && differenceInDays(checkOutDate, checkInDate) > 0 ? (
                 <>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Check-in:</span>
-                      <span className="font-medium">{format(checkInDate, "d MMM yyyy", { locale: es })}</span>
+                      <span className="font-medium">
+                        {format(checkInDate, "d MMM yyyy", { locale: es })}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Check-out:</span>
-                      <span className="font-medium">{format(checkOutDate, "d MMM yyyy", { locale: es })}</span>
+                      <span className="font-medium">
+                        {format(checkOutDate, "d MMM yyyy", { locale: es })}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Noches:</span>
-                      <span className="font-medium">{differenceInDays(checkOutDate, checkInDate)}</span>
+                      <span className="font-medium">
+                        {differenceInDays(checkOutDate, checkInDate)}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Huéspedes:</span>
@@ -510,7 +686,7 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Habitación:</span>
                       <span className="font-medium">
-                        ${(room.basePrice * differenceInDays(checkOutDate, checkInDate)).toLocaleString()}
+                        ${(room.basePrice * differenceInDays(checkOutDate, checkInDate)).toLocaleString('es-AR')}
                       </span>
                     </div>
                     {includesBreakfast && (
@@ -519,17 +695,19 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                         <span className="font-medium">
                           $
                           {(
-                            BREAKFAST_PRICE *
+                            BREAKFAST_PRICE_PER_NIGHT_PER_GUEST *
                             differenceInDays(checkOutDate, checkInDate) *
                             guestCount
-                          ).toLocaleString()}
+                          ).toLocaleString('es-AR')}
                         </span>
                       </div>
                     )}
                     {includesSpa && (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Spa:</span>
-                        <span className="font-medium">${(SPA_PRICE * guestCount).toLocaleString()}</span>
+                        <span className="font-medium">
+                          ${(SPA_PRICE_PER_GUEST * guestCount).toLocaleString('es-AR')}
+                        </span>
                       </div>
                     )}
                   </div>
@@ -539,15 +717,47 @@ export default function ReservarPage({ params }: { params: { id: string } }) {
                   <div className="space-y-2">
                     <div className="flex justify-between text-lg font-bold">
                       <span>Total a pagar:</span>
-                      <span className="text-primary">${totalPrice.toLocaleString()}</span>
+                      <span className="text-primary">${totalPrice.toLocaleString('es-AR')}</span>
                     </div>
                   </div>
                 </>
+              ) : (
+                 <p className="text-sm text-muted-foreground">
+                    Selecciona tus fechas para ver el resumen del precio.
+                 </p>
               )}
             </CardContent>
           </Card>
         </div>
       </div>
     </div>
+  )
+}
+
+export default function ReservarPageWrapper({ params }: { params: Promise<{ id: string }> }) {
+  const [roomTypeId, setRoomTypeId] = useState<string | null>(null)
+
+  useEffect(() => {
+    params.then(resolvedParams => {
+      setRoomTypeId(resolvedParams.id)
+    })
+  }, [params])
+
+  if (!roomTypeId) {
+    return (
+      <div className="container mx-auto flex h-[60vh] items-center justify-center px-4 py-12">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  return (
+    <Suspense fallback={
+      <div className="container mx-auto flex h-[60vh] items-center justify-center px-4 py-12">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    }>
+      <ReservarPageComponent roomTypeId={roomTypeId} />
+    </Suspense>
   )
 }

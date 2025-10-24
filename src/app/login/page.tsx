@@ -1,49 +1,56 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import Link from "next/link"
-import { useAuth } from "@/lib/auth-context"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { useToast } from "@/hooks/use-toast"
-import { Hotel } from "lucide-react"
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useAuth } from "../../lib/auth-context";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card";
+import { useToast } from "../../hooks/use-toast";
+import { Hotel } from "lucide-react";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const { login } = useAuth()
-  const router = useRouter()
-  const { toast } = useToast()
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const { login } = useAuth();
+  const router = useRouter();
+  const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
+    e.preventDefault();
+    setIsLoading(true);
 
-    const success = await login(email, password)
+    const success = await login(email, password);
 
     if (success) {
       toast({
         title: "Inicio de sesión exitoso",
         description: "Bienvenido de vuelta",
-      })
-      // Redirect will be handled by the root page
-      router.push("/")
+      });
+      // La redirección se manejará en la página raíz o layout
+      router.push("/");
     } else {
       toast({
         title: "Error de autenticación",
         description: "Email o contraseña incorrectos",
         variant: "destructive",
-      })
+      });
     }
 
-    setIsLoading(false)
-  }
+    setIsLoading(false);
+  };
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-secondary/20 to-background p-4">
@@ -53,7 +60,9 @@ export default function LoginPage() {
             <Hotel className="h-8 w-8 text-primary-foreground" />
           </div>
           <CardTitle className="text-2xl font-bold">Hotel Grand Vista</CardTitle>
-          <CardDescription>Ingresa tus credenciales para acceder al sistema</CardDescription>
+          <CardDescription>
+            Ingresa tus credenciales para acceder al sistema
+          </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
@@ -66,6 +75,7 @@ export default function LoginPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                disabled={isLoading}
               />
             </div>
             <div className="space-y-2">
@@ -77,6 +87,7 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                disabled={isLoading}
               />
             </div>
           </CardContent>
@@ -86,24 +97,20 @@ export default function LoginPage() {
             </Button>
             <p className="text-center text-sm text-muted-foreground">
               {"¿No tienes una cuenta? "}
-              <Link href="/register" className="font-medium text-primary hover:underline">
+              <Link
+                href="/register"
+                className={`font-medium text-primary hover:underline ${
+                  isLoading ? "pointer-events-none opacity-50" : ""
+                }`}
+              >
                 Crear cuenta
               </Link>
             </p>
           </CardFooter>
         </form>
-        <div className="border-t px-6 py-4">
-          <p className="text-xs text-muted-foreground">
-            <strong>Usuarios de prueba:</strong>
-            <br />
-            Cliente: cliente@hotel.com / cliente123
-            <br />
-            Operador: operador@hotel.com / operador123
-            <br />
-            Gerente: gerente@hotel.com / gerente123
-          </p>
-        </div>
+        {/* El bloque de usuarios de prueba ha sido eliminado */}
       </Card>
     </div>
-  )
+  );
 }
+

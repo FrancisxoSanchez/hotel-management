@@ -22,6 +22,13 @@ enum ReservationStatus {
   cancelada
 }
 
+enum RoomStatus {
+  disponible
+  ocupada
+  mantenimiento
+  limpieza
+}
+
 // --- Modelos de la Base de Datos ---
 
 model User {
@@ -40,8 +47,6 @@ model User {
   attendedConsultations Consultation[] @relation("AttendedBy")
 }
 
-// Traduje tu 'Room' a 'RoomType', ya que 'quantity'
-// indica que es un TIPO de habitación (ej: "Doble Standard")
 model RoomType {
   id          String   @id @default(cuid())
   name        String   @unique
@@ -53,13 +58,25 @@ model RoomType {
 
   includesBreakfast Boolean
   includesSpa       Boolean
-  quantity          Int // Cuántas habitaciones físicas de este tipo existen
 
-  // --- ESTE ES EL CAMPO NUEVO ---
-  // Para guardar ["Wi-Fi", "TV 55\"", "Minibar", etc.]
+  // Array de características del tipo de habitación
   features    String[] @default([])
 
-  // Relaciones: Un tipo de habitación puede tener muchas reservas
+  // Relaciones: Un tipo de habitación puede tener muchas habitaciones físicas
+  rooms Room[]
+}
+
+// Nueva tabla: Habitación individual
+model Room {
+  id          String     @id // Ej: "101", "201", "305"
+  floor       Int        // Primer dígito del ID (1, 2, 3)
+  status      RoomStatus @default(disponible)
+  
+  // Relación con el tipo de habitación
+  roomTypeId  String
+  roomType    RoomType   @relation(fields: [roomTypeId], references: [id])
+
+  // Relaciones: Una habitación puede tener muchas reservas
   reservations Reservation[]
 }
 
@@ -68,9 +85,6 @@ model Amenity {
   name        String   @unique
   description String
   images      String[]
-
-  // --- BORRAMOS ESTA LÍNEA ---
-  // roomTypes RoomType[] // Esta relación M2M ya no va
 }
 
 model Guest {
@@ -96,16 +110,12 @@ model Reservation {
   includesBreakfast Boolean
   includesSpa       Boolean
 
-  // El número de habitación físico (ej: 101, 204).
-  // Es opcional (?) porque se puede asignar al confirmar.
-  roomNumber Int?
-
   createdAt   DateTime  @default(now())
   cancelledAt DateTime?
 
-  // Relación con el tipo de habitación reservado
-  roomTypeId String
-  roomType   RoomType @relation(fields: [roomTypeId], references: [id])
+  // Relación con la habitación física reservada
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id])
 
   // Relación con el usuario que hizo la reserva
   userId String
