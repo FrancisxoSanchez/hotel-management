@@ -30,6 +30,78 @@ interface GuestInput {
   phone: string;
 }
 
+// Utilidades de formateo
+const formatCardNumber = (value: string) => {
+  const cleaned = value.replace(/\s/g, '');
+  const groups = cleaned.match(/.{1,4}/g);
+  return groups ? groups.join(' ') : cleaned;
+};
+
+const formatCardExpiry = (value: string) => {
+  const cleaned = value.replace(/\D/g, '');
+  if (cleaned.length >= 2) {
+    return cleaned.slice(0, 2) + '/' + cleaned.slice(2, 4);
+  }
+  return cleaned;
+};
+
+const formatPhone = (value: string) => {
+  const cleaned = value.replace(/\D/g, '');
+  if (cleaned.length === 0) return '';
+  
+  if (cleaned.startsWith('54')) {
+    // Formato internacional argentino: +54 11 1234-5678
+    if (cleaned.length <= 2) return `+${cleaned}`;
+    if (cleaned.length <= 4) return `+${cleaned.slice(0, 2)} ${cleaned.slice(2)}`;
+    if (cleaned.length <= 8) return `+${cleaned.slice(0, 2)} ${cleaned.slice(2, 4)} ${cleaned.slice(4)}`;
+    return `+${cleaned.slice(0, 2)} ${cleaned.slice(2, 4)} ${cleaned.slice(4, 8)}-${cleaned.slice(8, 12)}`;
+  } else {
+    // Formato nacional: 11 1234-5678
+    if (cleaned.length <= 2) return cleaned;
+    if (cleaned.length <= 6) return `${cleaned.slice(0, 2)} ${cleaned.slice(2)}`;
+    return `${cleaned.slice(0, 2)} ${cleaned.slice(2, 6)}-${cleaned.slice(6, 10)}`;
+  }
+};
+
+// Validaciones
+const validateEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
+const validateDNI = (dni: string): boolean => {
+  const cleaned = dni.replace(/\D/g, '');
+  return cleaned.length >= 7 && cleaned.length <= 9;
+};
+
+const validateCardNumber = (cardNumber: string): boolean => {
+  const cleaned = cardNumber.replace(/\s/g, '');
+  return cleaned.length === 16 && /^\d+$/.test(cleaned);
+};
+
+const validateCardExpiry = (expiry: string): boolean => {
+  if (expiry.length !== 5) return false;
+  
+  const [month, year] = expiry.split('/');
+  const monthNum = parseInt(month, 10);
+  const yearNum = parseInt('20' + year, 10);
+  
+  if (monthNum < 1 || monthNum > 12) return false;
+  
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth() + 1;
+  
+  if (yearNum < currentYear) return false;
+  if (yearNum === currentYear && monthNum < currentMonth) return false;
+  
+  return true;
+};
+
+const validateCVV = (cvv: string): boolean => {
+  return cvv.length === 3 || cvv.length === 4;
+};
+
 function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -51,6 +123,9 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
     return date && isValid(date) ? date : undefined;
   })
   
+  // Determinar si las fechas vienen bloqueadas desde la URL
+  const datesLockedFromUrl = !!(searchParams.get("checkIn") && searchParams.get("checkOut"))
+  
   const [guestCount, setGuestCount] = useState(1)
   const [guests, setGuests] = useState<Partial<GuestInput>[]>([
     { name: "", dni: "", email: "", phone: "" },
@@ -64,7 +139,11 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
   const [cardCvv, setCardCvv] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
 
-  // Cargar datos de la habitación desde la API
+  // Errores de validación
+  const [guestErrors, setGuestErrors] = useState<Array<{[key: string]: string}>>([])
+  const [cardErrors, setCardErrors] = useState<{[key: string]: string}>({})
+
+  // Cargar datos de la habitación
   useEffect(() => {
     if (roomTypeId) {
       setIsLoadingRoom(true)
@@ -79,6 +158,13 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
           setRoom(data)
           if (data.maxGuests < guestCount) {
              setGuestCount(data.maxGuests)
+          }
+          // Si la habitación ya incluye desayuno o spa, deshabilitar opciones
+          if (data.includesBreakfast) {
+            setIncludesBreakfast(true)
+          }
+          if (data.includesSpa) {
+            setIncludesSpa(true)
           }
         })
         .catch((err) => {
@@ -104,12 +190,16 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
 
     let total = room.basePrice * nights
     
-    if (includesBreakfast) {
+    // Solo agregar costo de desayuno si NO está incluido en el tipo de habitación
+    if (includesBreakfast && !room.includesBreakfast) {
       total += BREAKFAST_PRICE_PER_NIGHT_PER_GUEST * nights * guestCount
     }
-    if (includesSpa) {
+    
+    // Solo agregar costo de spa si NO está incluido en el tipo de habitación
+    if (includesSpa && !room.includesSpa) {
       total += SPA_PRICE_PER_GUEST * guestCount
     }
+    
     return total
   }
 
@@ -160,22 +250,70 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
         phone: "",
       }))
     )
+    setGuestErrors(Array.from({ length: guestCount }, () => ({})))
     setStep(2)
   }
 
-  const handleStep2Next = () => {
-    for (let i = 0; i < guests.length; i++) {
-      const guest = guests[i]
-      if (!guest.name || !guest.dni || !guest.email || !guest.phone) {
-        toast({
-          title: "Error",
-          description: `Por favor completa todos los datos del huésped ${i + 1}`,
-          variant: "destructive",
-        })
-        return
+  const validateGuests = (): boolean => {
+    const errors = guests.map((guest) => {
+      const guestErrors: {[key: string]: string} = {}
+      
+      if (!guest.name || guest.name.trim().length < 3) {
+        guestErrors.name = "Nombre debe tener al menos 3 caracteres"
       }
+      
+      if (!guest.dni || !validateDNI(guest.dni)) {
+        guestErrors.dni = "DNI/Pasaporte inválido (7-9 dígitos)"
+      }
+      
+      if (!guest.email || !validateEmail(guest.email)) {
+        guestErrors.email = "Email inválido"
+      }
+      
+      if (!guest.phone || guest.phone.replace(/\D/g, '').length < 10) {
+        guestErrors.phone = "Teléfono debe tener al menos 10 dígitos"
+      }
+      
+      return guestErrors
+    })
+    
+    setGuestErrors(errors)
+    return errors.every(e => Object.keys(e).length === 0)
+  }
+
+  const handleStep2Next = () => {
+    if (!validateGuests()) {
+      toast({
+        title: "Error",
+        description: "Por favor corrige los errores en los datos de los huéspedes",
+        variant: "destructive",
+      })
+      return
     }
     setStep(3)
+  }
+
+  const validatePayment = (): boolean => {
+    const errors: {[key: string]: string} = {}
+    
+    if (!validateCardNumber(cardNumber)) {
+      errors.cardNumber = "Número de tarjeta inválido (16 dígitos)"
+    }
+    
+    if (!cardName || cardName.trim().length < 3) {
+      errors.cardName = "Nombre en tarjeta requerido"
+    }
+    
+    if (!validateCardExpiry(cardExpiry)) {
+      errors.cardExpiry = "Fecha de vencimiento inválida o expirada"
+    }
+    
+    if (!validateCVV(cardCvv)) {
+      errors.cardCvv = "CVV inválido (3-4 dígitos)"
+    }
+    
+    setCardErrors(errors)
+    return Object.keys(errors).length === 0
   }
 
   const handlePayment = async () => {
@@ -188,10 +326,10 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
       return;
     }
 
-    if (!cardNumber || !cardName || !cardExpiry || !cardCvv) {
+    if (!validatePayment()) {
       toast({
         title: "Error",
-        description: "Por favor completa todos los datos de pago",
+        description: "Por favor corrige los errores en los datos de pago",
         variant: "destructive",
       })
       return
@@ -248,8 +386,53 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
 
   const updateGuest = (index: number, field: keyof GuestInput, value: string) => {
     const newGuests = [...guests]
-    newGuests[index] = { ...newGuests[index], [field]: value }
+    
+    // Aplicar formato según el campo
+    let formattedValue = value
+    if (field === 'phone') {
+      formattedValue = formatPhone(value)
+    } else if (field === 'dni') {
+      formattedValue = value.replace(/\D/g, '')
+    }
+    
+    newGuests[index] = { ...newGuests[index], [field]: formattedValue }
     setGuests(newGuests)
+    
+    // Limpiar error del campo cuando se edita
+    if (guestErrors[index]?.[field]) {
+      const newErrors = [...guestErrors]
+      delete newErrors[index][field]
+      setGuestErrors(newErrors)
+    }
+  }
+
+  const handleCardNumberChange = (value: string) => {
+    const cleaned = value.replace(/\s/g, '');
+    if (cleaned.length <= 16 && /^\d*$/.test(cleaned)) {
+      setCardNumber(formatCardNumber(cleaned))
+      if (cardErrors.cardNumber) {
+        setCardErrors({...cardErrors, cardNumber: ''})
+      }
+    }
+  }
+
+  const handleCardExpiryChange = (value: string) => {
+    const cleaned = value.replace(/\D/g, '');
+    if (cleaned.length <= 4) {
+      setCardExpiry(formatCardExpiry(cleaned))
+      if (cardErrors.cardExpiry) {
+        setCardErrors({...cardErrors, cardExpiry: ''})
+      }
+    }
+  }
+
+  const handleCardCvvChange = (value: string) => {
+    if (value.length <= 4 && /^\d*$/.test(value)) {
+      setCardCvv(value)
+      if (cardErrors.cardCvv) {
+        setCardErrors({...cardErrors, cardCvv: ''})
+      }
+    }
   }
 
   if (isLoadingRoom || isAuthLoading) {
@@ -336,6 +519,7 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
+                          disabled={datesLockedFromUrl}
                           className={cn(
                             "w-full justify-start text-left font-normal",
                             !checkInDate && "text-muted-foreground"
@@ -345,23 +529,28 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
                           {checkInDate ? format(checkInDate, "PPP", { locale: es }) : "Seleccionar fecha"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={checkInDate}
-                          onSelect={setCheckInDate}
-                          disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
-                          initialFocus
-                        />
-                      </PopoverContent>
+                      {!datesLockedFromUrl && (
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={checkInDate}
+                            onSelect={setCheckInDate}
+                            disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
+                            locale={es}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      )}
                     </Popover>
                   </div>
+                  
                   <div className="space-y-2">
                     <Label>Fecha de salida</Label>
                     <Popover>
                       <PopoverTrigger asChild>
                         <Button
                           variant="outline"
+                          disabled={datesLockedFromUrl}
                           className={cn(
                             "w-full justify-start text-left font-normal",
                             !checkOutDate && "text-muted-foreground"
@@ -371,15 +560,18 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
                           {checkOutDate ? format(checkOutDate, "PPP", { locale: es }) : "Seleccionar fecha"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={checkOutDate}
-                          onSelect={setCheckOutDate}
-                          disabled={(date) => !checkInDate || date <= checkInDate}
-                          initialFocus
-                        />
-                      </PopoverContent>
+                      {!datesLockedFromUrl && (
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={checkOutDate}
+                            onSelect={setCheckOutDate}
+                            disabled={(date) => !checkInDate || date <= checkInDate}
+                            locale={es}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      )}
                     </Popover>
                   </div>
                 </div>
@@ -424,34 +616,46 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
 
                 <div className="space-y-4">
                   <h3 className="font-semibold">Servicios adicionales</h3>
+                  
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="breakfast"
                       checked={includesBreakfast}
                       onCheckedChange={(checked) =>
-                        setIncludesBreakfast(checked as boolean)
+                        !room.includesBreakfast && setIncludesBreakfast(checked as boolean)
                       }
+                      disabled={room.includesBreakfast}
                     />
                     <label
                       htmlFor="breakfast"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                     >
-                      Incluir desayuno buffet (+${BREAKFAST_PRICE_PER_NIGHT_PER_GUEST.toLocaleString()} por persona por noche)
+                      {room.includesBreakfast ? (
+                        <span>Desayuno buffet <span className="text-green-600">(Ya incluido)</span></span>
+                      ) : (
+                        `Incluir desayuno buffet (+$${BREAKFAST_PRICE_PER_NIGHT_PER_GUEST.toLocaleString()} por persona por noche)`
+                      )}
                     </label>
                   </div>
+                  
                   <div className="flex items-center space-x-2">
                     <Checkbox
                       id="spa"
                       checked={includesSpa}
                       onCheckedChange={(checked) =>
-                        setIncludesSpa(checked as boolean)
+                        !room.includesSpa && setIncludesSpa(checked as boolean)
                       }
+                      disabled={room.includesSpa}
                     />
                     <label
                       htmlFor="spa"
                       className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                     >
-                      Incluir acceso al spa (+${SPA_PRICE_PER_GUEST.toLocaleString()} por persona)
+                      {room.includesSpa ? (
+                        <span>Acceso al spa <span className="text-green-600">(Ya incluido)</span></span>
+                      ) : (
+                        `Incluir acceso al spa (+$${SPA_PRICE_PER_GUEST.toLocaleString()} por persona)`
+                      )}
                     </label>
                   </div>
                 </div>
@@ -489,8 +693,12 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
                             updateGuest(index, "name", e.target.value)
                           }
                           placeholder="Juan Pérez"
+                          className={guestErrors[index]?.name ? 'border-red-500' : ''}
                           required
                         />
+                        {guestErrors[index]?.name && (
+                          <p className="text-sm text-red-500">{guestErrors[index].name}</p>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor={`dni-${index}`}>DNI / Pasaporte</Label>
@@ -501,8 +709,12 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
                             updateGuest(index, "dni", e.target.value)
                           }
                           placeholder="12345678"
+                          className={guestErrors[index]?.dni ? 'border-red-500' : ''}
                           required
                         />
+                        {guestErrors[index]?.dni && (
+                          <p className="text-sm text-red-500">{guestErrors[index].dni}</p>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor={`email-${index}`}>Email</Label>
@@ -514,8 +726,12 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
                             updateGuest(index, "email", e.target.value)
                           }
                           placeholder="juan@email.com"
+                          className={guestErrors[index]?.email ? 'border-red-500' : ''}
                           required
                         />
+                        {guestErrors[index]?.email && (
+                          <p className="text-sm text-red-500">{guestErrors[index].email}</p>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor={`phone-${index}`}>Teléfono</Label>
@@ -527,8 +743,12 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
                             updateGuest(index, "phone", e.target.value)
                           }
                           placeholder="+54 11 1234-5678"
+                          className={guestErrors[index]?.phone ? 'border-red-500' : ''}
                           required
                         />
+                        {guestErrors[index]?.phone && (
+                          <p className="text-sm text-red-500">{guestErrors[index].phone}</p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -560,9 +780,13 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
                       id="cardNumber"
                       placeholder="1234 5678 9012 3456"
                       value={cardNumber}
-                      onChange={(e) => setCardNumber(e.target.value)}
+                      onChange={(e) => handleCardNumberChange(e.target.value)}
+                      className={cardErrors.cardNumber ? 'border-red-500' : ''}
                       maxLength={19}
                     />
+                    {cardErrors.cardNumber && (
+                      <p className="text-sm text-red-500">{cardErrors.cardNumber}</p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="cardName">Nombre en la tarjeta</Label>
@@ -570,8 +794,17 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
                       id="cardName"
                       placeholder="JUAN PEREZ"
                       value={cardName}
-                      onChange={(e) => setCardName(e.target.value.toUpperCase())}
+                      onChange={(e) => {
+                        setCardName(e.target.value.toUpperCase())
+                        if (cardErrors.cardName) {
+                          setCardErrors({...cardErrors, cardName: ''})
+                        }
+                      }}
+                      className={cardErrors.cardName ? 'border-red-500' : ''}
                     />
+                    {cardErrors.cardName && (
+                      <p className="text-sm text-red-500">{cardErrors.cardName}</p>
+                    )}
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
@@ -580,9 +813,13 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
                         id="cardExpiry"
                         placeholder="MM/AA"
                         value={cardExpiry}
-                        onChange={(e) => setCardExpiry(e.target.value)}
+                        onChange={(e) => handleCardExpiryChange(e.target.value)}
+                        className={cardErrors.cardExpiry ? 'border-red-500' : ''}
                         maxLength={5}
                       />
+                      {cardErrors.cardExpiry && (
+                        <p className="text-sm text-red-500">{cardErrors.cardExpiry}</p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="cardCvv">CVV</Label>
@@ -591,9 +828,13 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
                         type="password"
                         placeholder="123"
                         value={cardCvv}
-                        onChange={(e) => setCardCvv(e.target.value)}
+                        onChange={(e) => handleCardCvvChange(e.target.value)}
+                        className={cardErrors.cardCvv ? 'border-red-500' : ''}
                         maxLength={4}
                       />
+                      {cardErrors.cardCvv && (
+                        <p className="text-sm text-red-500">{cardErrors.cardCvv}</p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -691,22 +932,33 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
                     </div>
                     {includesBreakfast && (
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Desayuno:</span>
+                        <span className="text-muted-foreground">
+                          Desayuno {room.includesBreakfast && <span className="text-xs text-green-600">(incluido)</span>}:
+                        </span>
                         <span className="font-medium">
-                          $
-                          {(
-                            BREAKFAST_PRICE_PER_NIGHT_PER_GUEST *
-                            differenceInDays(checkOutDate, checkInDate) *
-                            guestCount
-                          ).toLocaleString('es-AR')}
+                          {room.includesBreakfast ? (
+                            <span className="text-green-600">$0</span>
+                          ) : (
+                            `${(
+                              BREAKFAST_PRICE_PER_NIGHT_PER_GUEST *
+                              differenceInDays(checkOutDate, checkInDate) *
+                              guestCount
+                            ).toLocaleString('es-AR')}`
+                          )}
                         </span>
                       </div>
                     )}
                     {includesSpa && (
                       <div className="flex justify-between">
-                        <span className="text-muted-foreground">Spa:</span>
+                        <span className="text-muted-foreground">
+                          Spa {room.includesSpa && <span className="text-xs text-green-600">(incluido)</span>}:
+                        </span>
                         <span className="font-medium">
-                          ${(SPA_PRICE_PER_GUEST * guestCount).toLocaleString('es-AR')}
+                          {room.includesSpa ? (
+                            <span className="text-green-600">$0</span>
+                          ) : (
+                            `${(SPA_PRICE_PER_GUEST * guestCount).toLocaleString('es-AR')}`
+                          )}
                         </span>
                       </div>
                     )}

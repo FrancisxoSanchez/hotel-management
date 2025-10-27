@@ -88,16 +88,28 @@ export async function createReservation(
     const guestCount = guests.length;
 
     const baseRoomPrice = roomType.basePrice * nights;
-    const breakfastPrice = includesBreakfast
+    
+    // IMPORTANTE: Solo cobrar desayuno si NO está incluido en el tipo de habitación
+    const breakfastPrice = (includesBreakfast && !roomType.includesBreakfast)
       ? BREAKFAST_PRICE_PER_NIGHT_PER_GUEST * nights * guestCount
       : 0;
-    const spaPrice = includesSpa ? SPA_PRICE_PER_GUEST * guestCount : 0;
+    
+    // IMPORTANTE: Solo cobrar spa si NO está incluido en el tipo de habitación
+    const spaPrice = (includesSpa && !roomType.includesSpa)
+      ? SPA_PRICE_PER_GUEST * guestCount
+      : 0;
+    
     const calculatedTotal = baseRoomPrice + breakfastPrice + spaPrice;
 
     // Validar con tolerancia para decimales
     if (Math.abs(calculatedTotal - totalPrice) > 0.01) {
       console.warn(
-        `[PRICE_MISMATCH] Expected: ${calculatedTotal}, Received: ${totalPrice}`
+        `[PRICE_MISMATCH] Expected: ${calculatedTotal}, Received: ${totalPrice}`,
+        `\nRoom Type: ${roomType.name}`,
+        `\nBase Price: ${baseRoomPrice}`,
+        `\nBreakfast (includesBreakfast=${includesBreakfast}, roomType.includesBreakfast=${roomType.includesBreakfast}): ${breakfastPrice}`,
+        `\nSpa (includesSpa=${includesSpa}, roomType.includesSpa=${roomType.includesSpa}): ${spaPrice}`,
+        `\nNights: ${nights}, Guests: ${guestCount}`
       );
       throw new Error(
         "El precio calculado no coincide. Por favor, recargue la página e intente nuevamente."

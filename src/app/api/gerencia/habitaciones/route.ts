@@ -1,5 +1,7 @@
+// app/api/gerencia/habitaciones/route.ts
+
 import { NextRequest, NextResponse } from "next/server"
-import { createRoom, getRooms, getRoomTypes } from "@/prisma/gerencia-habitaciones"
+import { createRoom, getRooms } from "@/prisma/gerencia-habitaciones"
 import { z } from "zod"
 
 // --- Esquemas de validación ---
@@ -8,7 +10,7 @@ const createRoomSchema = z.object({
   roomTypeId: z.string().min(1, "El tipo de habitación es requerido"),
 })
 
-// --- GET: lista habitaciones y tipos ---
+// --- GET: lista habitaciones ---
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -17,9 +19,9 @@ export async function GET(request: NextRequest) {
 
     const floor = floorParam ? parseInt(floorParam) : undefined
     const rooms = await getRooms({ floor, roomTypeId })
-    const roomTypes = await getRoomTypes()
 
-    return NextResponse.json({ rooms, roomTypes })
+    // Ya no devuelve roomTypes, eso se pide a /api/gerencia/room-types
+    return NextResponse.json({ rooms })
   } catch (error: any) {
     console.error("[API_HABITACIONES_GET]", error)
     return NextResponse.json(
@@ -48,6 +50,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, room })
   } catch (error: any) {
     console.error("[API_HABITACIONES_POST]", error)
+    // Manejo de error específico para ID duplicado
+    if (error.code === "P2002") {
+      return NextResponse.json(
+        { error: `Ya existe una habitación con el número ingresado.` },
+        { status: 409 }
+      )
+    }
     return NextResponse.json(
       { error: "Error al crear la habitación", message: error.message },
       { status: 500 }

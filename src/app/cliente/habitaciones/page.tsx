@@ -226,6 +226,7 @@ export default function RoomsPage() {
                       today.setHours(0, 0, 0, 0)
                       return date < today
                     }}
+                    locale={es}
                     initialFocus
                   />
                 </PopoverContent>
@@ -264,6 +265,7 @@ export default function RoomsPage() {
                       }
                       return false
                     }}
+                    locale={es}
                     initialFocus
                   />
                 </PopoverContent>
@@ -283,7 +285,6 @@ export default function RoomsPage() {
                   <SelectItem value="2">2 huéspedes</SelectItem>
                   <SelectItem value="3">3 huéspedes</SelectItem>
                   <SelectItem value="4">4 huéspedes</SelectItem>
-                  <SelectItem value="5">5 o más</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -382,7 +383,7 @@ export default function RoomsPage() {
                     className="object-cover" 
                   />
                   <div className="absolute right-2 top-2">
-                    <Badge variant="default" className="bg-background/90 backdrop-blur">
+                    <Badge variant="default" className="bg-primary backdrop-blur">
                       {room.availableCount} disponible{room.availableCount !== 1 ? "s" : ""}
                     </Badge>
                   </div>

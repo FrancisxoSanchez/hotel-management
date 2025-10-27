@@ -1,63 +1,22 @@
-// src/app/api/operador/habitaciones/route.ts
+// app/api/operador/habitaciones/route.ts
 
-import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from "next/server"
+import { getRoomsForOperator } from "@/prisma/operador"
 
 /**
- * GET - Obtener todas las habitaciones físicas con su tipo
+ * GET: Obtiene la lista de habitaciones para el panel de operador
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const rooms = await prisma.room.findMany({
-      include: {
-        roomType: {
-          select: {
-            id: true,
-            name: true,
-            basePrice: true,
-            maxGuests: true,
-            images: true,
-            isActive: true,
-          },
-        },
-        _count: {
-          select: {
-            reservations: {
-              where: {
-                status: {
-                  in: ['pendiente', 'confirmada'],
-                },
-                checkOutDate: {
-                  gte: new Date(),
-                },
-              },
-            },
-          },
-        },
-      },
-      orderBy: {
-        id: 'asc',
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      rooms: rooms.map(room => ({
-        id: room.id,
-        floor: room.floor,
-        status: room.status,
-        roomType: room.roomType,
-        activeReservations: room._count.reservations,
-      })),
-    });
-
+    const rooms = await getRoomsForOperator()
+    return NextResponse.json({ rooms })
   } catch (error: any) {
-    console.error('[API_ROOMS_GET_ERROR]', error);
+    console.error("[API_OPERADOR_HABITACIONES_GET]", error)
     return NextResponse.json(
-      { error: 'Error al obtener habitaciones', details: error.message },
+      { error: "Error al obtener habitaciones", message: error.message },
       { status: 500 }
-    );
+    )
   }
 }
 
-export const dynamic = 'force-dynamic';
+export const dynamic = "force-dynamic"
