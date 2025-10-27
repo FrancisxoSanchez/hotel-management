@@ -2,7 +2,12 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 import { createReservation } from "@/prisma/reserva";
+import { confirmPayment } from "@/lib/stripe";
+import { sendReservationConfirmation, sendNewReservationNotification } from "@/lib/sendgrid";
+import { calculateNights } from "@/lib/date-utils";
 
 // Esquema de validación para los huéspedes
 const guestSchema = z.object({
@@ -13,25 +18,20 @@ const guestSchema = z.object({
 });
 
 // Esquema de validación para el cuerpo (body) de la reserva
-// Esquema de validación para el cuerpo (body) de la reserva
 const reservationSchema = z.object({
-  // --- CAMBIO AQUÍ ---
-  // Acepta cualquier string de al menos 1 caracter, no solo CUIDs
   userId: z.string().min(1, "ID de usuario inválido"),
   roomTypeId: z.string().min(1, "ID de tipo de habitación inválido"),
-
-  // --- FIN DEL CAMBIO ---
-  
   checkIn: z.string().datetime("Fecha Check-in inválida"),
   checkOut: z.string().datetime("Fecha Check-out inválida"),
   guests: z.array(guestSchema).min(1, "Se requiere al menos un huésped"),
   includesBreakfast: z.boolean(),
   includesSpa: z.boolean(),
   totalPrice: z.number().positive("Precio total inválido"),
+  paymentIntentId: z.string().min(1, "ID de pago requerido"),
 });
 
 /**
- * Handler POST para crear una nueva reserva con asignación automática de habitación
+ * Handler POST para crear una nueva reserva con pago de Stripe y email de confirmación
  */
 export async function POST(request: NextRequest) {
   let body;
@@ -73,13 +73,72 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // 3. Llamar a la lógica de Prisma (asigna automáticamente una habitación)
+  // 3. Verificar que el pago se haya procesado correctamente en Stripe
+  try {
+    const paymentConfirmed = await confirmPayment(data.paymentIntentId);
+    
+    if (!paymentConfirmed) {
+      return NextResponse.json(
+        { error: "El pago no ha sido confirmado. Por favor intenta nuevamente." },
+        { status: 402 }
+      );
+    }
+  } catch (error: any) {
+    console.error("[PAYMENT_VERIFICATION_ERROR]", error.message);
+    return NextResponse.json(
+      { error: "Error al verificar el pago" },
+      { status: 500 }
+    );
+  }
+
+  // 4. Crear la reserva en la base de datos
   try {
     const newReservation = await createReservation({
       ...data,
       checkIn: checkInDate,
       checkOut: checkOutDate,
-    });
+    }) as any; // Temporal fix
+
+    // 5. Enviar email de confirmación al cliente
+    try {
+      const nights = calculateNights(checkInDate, checkOutDate);
+      
+      await sendReservationConfirmation({
+        customerName: data.guests[0].name,
+        customerEmail: data.guests[0].email,
+        reservationId: newReservation.id,
+        roomName: newReservation.room.roomType.name,
+        roomId: newReservation.roomId,
+        checkInDate: format(checkInDate, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es }),
+        checkOutDate: format(checkOutDate, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es }),
+        nights,
+        guests: data.guests.length,
+        totalPrice: newReservation.totalPrice,
+        includesBreakfast: newReservation.includesBreakfast,
+        includesSpa: newReservation.includesSpa,
+      });
+
+      // 6. Enviar notificación al hotel (opcional)
+      await sendNewReservationNotification({
+        customerName: data.guests[0].name,
+        customerEmail: data.guests[0].email,
+        reservationId: newReservation.id,
+        roomName: newReservation.room.roomType.name,
+        roomId: newReservation.roomId,
+        checkInDate: format(checkInDate, "d/MM/yyyy"),
+        checkOutDate: format(checkOutDate, "d/MM/yyyy"),
+        nights,
+        guests: data.guests.length,
+        totalPrice: newReservation.totalPrice,
+        includesBreakfast: newReservation.includesBreakfast,
+        includesSpa: newReservation.includesSpa,
+      });
+
+      console.log(`[EMAIL] Confirmación enviada a ${data.guests[0].email}`);
+    } catch (emailError: any) {
+      // Si falla el email, no cancelamos la reserva, solo lo registramos
+      console.error("[EMAIL_ERROR]", emailError.message);
+    }
 
     // Éxito - incluir información de la habitación asignada
     return NextResponse.json({
@@ -92,7 +151,7 @@ export async function POST(request: NextRequest) {
         checkInDate: newReservation.checkInDate,
         checkOutDate: newReservation.checkOutDate,
       },
-      message: "Reserva creada exitosamente",
+      message: "Reserva creada exitosamente. Recibirás un email de confirmación en breve.",
     }, { status: 201 });
     
   } catch (error: any) {

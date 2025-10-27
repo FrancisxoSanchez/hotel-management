@@ -7,7 +7,19 @@ import {
 } from "@/lib/constant";
 import { calculateNights } from "@/lib/date-utils";
 import { findAvailableRoomForType } from "./habitacion";
-import type { Reservation } from "@prisma/client";
+import type { Reservation, Room, RoomType, Guest, User } from "@prisma/client";
+
+export type ReservationWithDetails = Reservation & {
+  room: Room & {
+    roomType: RoomType;
+  };
+  guests: Guest[];
+  user: {
+    id: string;
+    name: string;
+    email: string;
+  };
+};
 
 interface GuestInput {
   name: string;
@@ -35,7 +47,7 @@ interface CreateReservationInput {
  */
 export async function createReservation(
   input: CreateReservationInput
-): Promise<Reservation> {
+): Promise<ReservationWithDetails> {
   const {
     userId,
     roomTypeId,

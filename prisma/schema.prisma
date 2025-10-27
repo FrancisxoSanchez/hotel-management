@@ -105,23 +105,22 @@ model Reservation {
   status       ReservationStatus @default(pendiente)
   totalPrice   Float
   depositPaid  Float             @default(0)
+  
+  // Agregar este campo para Stripe
+  paymentIntentId String?         // ID del Payment Intent de Stripe
 
-  // Opciones que el cliente eligió para esta reserva específica
   includesBreakfast Boolean
   includesSpa       Boolean
 
   createdAt   DateTime  @default(now())
   cancelledAt DateTime?
 
-  // Relación con la habitación física reservada
   roomId String
   room   Room   @relation(fields: [roomId], references: [id])
 
-  // Relación con el usuario que hizo la reserva
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
-  // Relaciones: Una reserva tiene muchos huéspedes (M2M)
   guests Guest[]
 }
 

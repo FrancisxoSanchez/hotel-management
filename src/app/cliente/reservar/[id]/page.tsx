@@ -2,6 +2,9 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { loadStripe } from '@stripe/stripe-js'
+import { Elements } from '@stripe/react-stripe-js'
+import StripePaymentForm from "@/components/StripePaymentForm"
 import { format, differenceInDays, isValid } from "date-fns"
 import { es } from "date-fns/locale"
 import { Button } from "@/components/ui/button"
@@ -22,6 +25,9 @@ import {
 } from "@/lib/constant"
 import { ArrowLeft, ArrowRight, CalendarIcon, CreditCard, Check, Loader2, Info } from "lucide-react"
 import { cn } from "@/lib/utils"
+
+// Inicializar Stripe
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
 
 interface GuestInput {
   name: string;
@@ -133,15 +139,12 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
   const [includesBreakfast, setIncludesBreakfast] = useState(false)
   const [includesSpa, setIncludesSpa] = useState(false)
   
-  const [cardNumber, setCardNumber] = useState("")
-  const [cardName, setCardName] = useState("")
-  const [cardExpiry, setCardExpiry] = useState("")
-  const [cardCvv, setCardCvv] = useState("")
+  const [clientSecret, setClientSecret] = useState<string>("")
+  const [paymentIntentId, setPaymentIntentId] = useState<string>("")
   const [isProcessing, setIsProcessing] = useState(false)
 
   // Errores de validación
   const [guestErrors, setGuestErrors] = useState<Array<{[key: string]: string}>>([])
-  const [cardErrors, setCardErrors] = useState<{[key: string]: string}>({})
 
   // Cargar datos de la habitación
   useEffect(() => {
@@ -281,7 +284,7 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
     return errors.every(e => Object.keys(e).length === 0)
   }
 
-  const handleStep2Next = () => {
+  const handleStep2Next = async () => {
     if (!validateGuests()) {
       toast({
         title: "Error",
@@ -290,33 +293,41 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
       })
       return
     }
-    setStep(3)
+
+    // Crear Payment Intent en Stripe
+    try {
+      const response = await fetch('/api/payment/create-intent', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          amount: totalPrice,
+          reservationId: 'pending',
+          userId: user?.id,
+          roomTypeId: room?.id,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Error al inicializar el pago')
+      }
+
+      const data = await response.json()
+      setClientSecret(data.clientSecret)
+      setPaymentIntentId(data.paymentIntentId)
+      setStep(3)
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo inicializar el pago",
+        variant: "destructive",
+      })
+    }
   }
 
-  const validatePayment = (): boolean => {
-    const errors: {[key: string]: string} = {}
-    
-    if (!validateCardNumber(cardNumber)) {
-      errors.cardNumber = "Número de tarjeta inválido (16 dígitos)"
-    }
-    
-    if (!cardName || cardName.trim().length < 3) {
-      errors.cardName = "Nombre en tarjeta requerido"
-    }
-    
-    if (!validateCardExpiry(cardExpiry)) {
-      errors.cardExpiry = "Fecha de vencimiento inválida o expirada"
-    }
-    
-    if (!validateCVV(cardCvv)) {
-      errors.cardCvv = "CVV inválido (3-4 dígitos)"
-    }
-    
-    setCardErrors(errors)
-    return Object.keys(errors).length === 0
-  }
 
-  const handlePayment = async () => {
+  const handlePaymentSuccess = async (confirmedPaymentIntentId: string) => {
     if (!user) {
       toast({
         title: "Error",
@@ -326,18 +337,7 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
       return;
     }
 
-    if (!validatePayment()) {
-      toast({
-        title: "Error",
-        description: "Por favor corrige los errores en los datos de pago",
-        variant: "destructive",
-      })
-      return
-    }
-
     setIsProcessing(true)
-
-    await new Promise((resolve) => setTimeout(resolve, 1500))
 
     const reservationData = {
       userId: user.id,
@@ -348,6 +348,7 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
       includesBreakfast: includesBreakfast,
       includesSpa: includesSpa,
       totalPrice: totalPrice,
+      paymentIntentId: confirmedPaymentIntentId,
     }
 
     try {
@@ -368,10 +369,13 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
 
       toast({
         title: "¡Reserva exitosa!",
-        description: `Se te asignó la habitación ${result.reservation.roomId}. Redirigiendo...`,
+        description: `Se te asignó la habitación ${result.reservation.roomId}. Recibirás un email de confirmación.`,
       })
 
-      router.push("/cliente/mis-reservas")
+      // Pequeño delay para que el usuario vea el mensaje
+      setTimeout(() => {
+        router.push("/cliente/mis-reservas")
+      }, 2000)
 
     } catch (error: any) {
       console.error("[RESERVATION_SUBMIT_ERROR]", error)
@@ -382,6 +386,14 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
       })
       setIsProcessing(false)
     }
+  }
+
+  const handlePaymentError = (error: string) => {
+    toast({
+      title: "Error en el pago",
+      description: error,
+      variant: "destructive",
+    })
   }
 
   const updateGuest = (index: number, field: keyof GuestInput, value: string) => {
@@ -403,35 +415,6 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
       const newErrors = [...guestErrors]
       delete newErrors[index][field]
       setGuestErrors(newErrors)
-    }
-  }
-
-  const handleCardNumberChange = (value: string) => {
-    const cleaned = value.replace(/\s/g, '');
-    if (cleaned.length <= 16 && /^\d*$/.test(cleaned)) {
-      setCardNumber(formatCardNumber(cleaned))
-      if (cardErrors.cardNumber) {
-        setCardErrors({...cardErrors, cardNumber: ''})
-      }
-    }
-  }
-
-  const handleCardExpiryChange = (value: string) => {
-    const cleaned = value.replace(/\D/g, '');
-    if (cleaned.length <= 4) {
-      setCardExpiry(formatCardExpiry(cleaned))
-      if (cardErrors.cardExpiry) {
-        setCardErrors({...cardErrors, cardExpiry: ''})
-      }
-    }
-  }
-
-  const handleCardCvvChange = (value: string) => {
-    if (value.length <= 4 && /^\d*$/.test(value)) {
-      setCardCvv(value)
-      if (cardErrors.cardCvv) {
-        setCardErrors({...cardErrors, cardCvv: ''})
-      }
     }
   }
 
@@ -763,107 +746,44 @@ function ReservarPageComponent({ roomTypeId }: { roomTypeId: string }) {
           )}
 
           {/* Paso 3 */}
+          {/* Paso 3 */}
           {step === 3 && (
             <Card>
               <CardHeader>
-                <CardTitle>Pago Total</CardTitle>
+                <CardTitle>Pago Seguro</CardTitle>
                 <CardDescription>
-                  Completa el pago de ${totalPrice.toLocaleString('es-AR')} para confirmar tu
-                  reserva.
+                  Completa el pago de ${totalPrice.toLocaleString('es-AR')} para confirmar tu reserva
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="cardNumber">Número de tarjeta</Label>
-                    <Input
-                      id="cardNumber"
-                      placeholder="1234 5678 9012 3456"
-                      value={cardNumber}
-                      onChange={(e) => handleCardNumberChange(e.target.value)}
-                      className={cardErrors.cardNumber ? 'border-red-500' : ''}
-                      maxLength={19}
+              <CardContent>
+                {clientSecret && (
+                  <Elements
+                    stripe={stripePromise}
+                    options={{
+                      clientSecret,
+                      appearance: {
+                        theme: 'stripe',
+                        variables: {
+                          colorPrimary: '#667eea',
+                        },
+                      },
+                      locale: 'es',
+                    }}
+                  >
+                    <StripePaymentForm
+                      totalPrice={totalPrice}
+                      onSuccess={handlePaymentSuccess}
+                      onError={handlePaymentError}
                     />
-                    {cardErrors.cardNumber && (
-                      <p className="text-sm text-red-500">{cardErrors.cardNumber}</p>
-                    )}
+                  </Elements>
+                )}
+                
+                {!clientSecret && (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <span className="ml-2">Inicializando pago seguro...</span>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cardName">Nombre en la tarjeta</Label>
-                    <Input
-                      id="cardName"
-                      placeholder="JUAN PEREZ"
-                      value={cardName}
-                      onChange={(e) => {
-                        setCardName(e.target.value.toUpperCase())
-                        if (cardErrors.cardName) {
-                          setCardErrors({...cardErrors, cardName: ''})
-                        }
-                      }}
-                      className={cardErrors.cardName ? 'border-red-500' : ''}
-                    />
-                    {cardErrors.cardName && (
-                      <p className="text-sm text-red-500">{cardErrors.cardName}</p>
-                    )}
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="cardExpiry">Vencimiento</Label>
-                      <Input
-                        id="cardExpiry"
-                        placeholder="MM/AA"
-                        value={cardExpiry}
-                        onChange={(e) => handleCardExpiryChange(e.target.value)}
-                        className={cardErrors.cardExpiry ? 'border-red-500' : ''}
-                        maxLength={5}
-                      />
-                      {cardErrors.cardExpiry && (
-                        <p className="text-sm text-red-500">{cardErrors.cardExpiry}</p>
-                      )}
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="cardCvv">CVV</Label>
-                      <Input
-                        id="cardCvv"
-                        type="password"
-                        placeholder="123"
-                        value={cardCvv}
-                        onChange={(e) => handleCardCvvChange(e.target.value)}
-                        className={cardErrors.cardCvv ? 'border-red-500' : ''}
-                        maxLength={4}
-                      />
-                      {cardErrors.cardCvv && (
-                        <p className="text-sm text-red-500">{cardErrors.cardCvv}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-lg bg-muted p-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Check className="h-4 w-4 text-primary" />
-                    <span>Pago seguro encriptado</span>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={handlePayment}
-                  className="w-full"
-                  size="lg"
-                  disabled={isProcessing}
-                >
-                  {isProcessing ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Procesando pago...
-                    </>
-                  ) : (
-                    <>
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      Pagar ${totalPrice.toLocaleString('es-AR')}
-                    </>
-                  )}
-                </Button>
+                )}
               </CardContent>
             </Card>
           )}
