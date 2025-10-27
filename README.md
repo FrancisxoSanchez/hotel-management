@@ -13,3 +13,4 @@ npm install stripe @sendgrid/mail
 npm install --save-dev @types/node
 npm install @stripe/stripe-js @stripe/react-stripe-js
 
+Tarjeta test para argentina: 4000000320000021 cualq fecha y cualq cvv
