@@ -34,7 +34,7 @@ export default function MapaInteractivo() {
         <Popup>
           <div className="text-center">
             <strong className="block text-base">Hotel Grand Vista</strong>
-            <span className="text-sm text-muted-foreground">Balcarce 252, Salta</span>
+            <span className="text-sm text-muted-foreground">Balcarce y Entre Rios, Salta</span>
           </div>
         </Popup>
       </Marker>
