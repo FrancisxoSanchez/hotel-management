@@ -1,6 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import type { ReservationStatus } from "@prisma/client";
 
+/**
+ * Obtiene los datos necesarios para la grilla del calendario del operador.
+ * Trae todas las habitaciones físicas y las reservas activas en un rango de fechas.
+ */
 export async function getCalendarData(startDate: Date, endDate: Date) {
   // 1. Obtener todas las habitaciones físicas, ordenadas por ID (ej: 101, 102, 201)
   const rooms = await prisma.room.findMany({
@@ -44,6 +48,9 @@ export async function getCalendarData(startDate: Date, endDate: Date) {
     },
   });
 
+  // 🔥 CORRECCIÓN: Convertir las fechas a formato ISO string SIN conversión de zona horaria
+  // Prisma devuelve Date objects que pueden tener offset de zona horaria
+  // Los convertimos a strings en formato ISO para que el frontend los parsee correctamente
   const reservationsFormatted = reservations.map((reservation) => ({
     ...reservation,
     // Convertimos a ISO string pero manteniendo la fecha local (sin offset UTC)
@@ -55,7 +62,10 @@ export async function getCalendarData(startDate: Date, endDate: Date) {
   return { rooms, reservations: reservationsFormatted };
 }
 
-
+/**
+ * 🔥 Función auxiliar para convertir Date a ISO string sin offset de zona horaria
+ * Esto evita que "2025-10-28T00:00:00.000Z" se muestre como "27 de octubre"
+ */
 function formatDateToLocalISO(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');

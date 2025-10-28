@@ -4,42 +4,38 @@ import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
-// --- NO IMPORTAMOS LAS IMÁGENES AQUÍ ARRIBA ---
+// Fix para los iconos de Leaflet en Next.js
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
 
 export default function MapaInteractivo() {
   const position: [number, number] = [-24.7811, -65.41157];
   const zoomLevel = 16;
-
-  // --- CAMBIO: Usamos 'require' DENTRO de la función ---
-  // 'require' es manejado de forma diferente por el bundler
-  // y suele resolver correctamente los 'assets' de Leaflet.
-  const DefaultIcon = L.icon({
-    iconUrl: require('leaflet/dist/images/marker-icon.png').default,
-    iconRetinaUrl: require('leaflet/dist/images/marker-icon-2x.png').default,
-    shadowUrl: require('leaflet/dist/images/marker-shadow.png').default,
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41],
-  });
-  // --- FIN DEL CAMBIO ---
 
   return (
     <MapContainer
       center={position}
       zoom={zoomLevel}
       scrollWheelZoom={false}
-      className="h-full w-full"
+      className="h-full w-full z-0"
+      style={{ height: '100%', width: '100%' }}
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       
-      {/* Esto usará el ícono 'DefaultIcon' definido arriba */}
-      <Marker position={position} icon={DefaultIcon}>
+      <Marker position={position}>
         <Popup>
-          Hotel Grand Vista <br /> Balcarce 252, Salta
+          <div className="text-center">
+            <strong className="block text-base">Hotel Grand Vista</strong>
+            <span className="text-sm text-muted-foreground">Balcarce 252, Salta</span>
+          </div>
         </Popup>
       </Marker>
     </MapContainer>

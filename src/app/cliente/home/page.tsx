@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { getHomePageData } from '@/prisma/home'; 
 
 import { Users, Sparkles, Phone, Mail } from 'lucide-react';
+import CargadorDeMapa from '@/components/cargador-de-mapa';
 
 // Convertimos la página en un Componente de Servidor (async)
 export default async function ClientHomePage() {
@@ -174,17 +175,9 @@ export default async function ClientHomePage() {
         </div>
       </section>
 
-      {/* About Section */}
+      {/* About Section - MODIFICADA CON MAPA */}
       <section className="container max-w-7xl mx-auto px-4 py-16">
         <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
-          <div className="relative h-[400px] overflow-hidden rounded-lg lg:h-[500px]">
-            <img
-              src="/elegant-hotel-restaurant.jpg"
-              alt="Sobre nosotros"
-              className="absolute inset-0 h-full w-full object-cover"
-              loading="lazy"
-            />
-          </div>
           <div className="space-y-6">
             <h2 className="text-3xl font-bold md:text-4xl">Sobre Nosotros</h2>
             <div className="space-y-4 text-muted-foreground">
@@ -207,6 +200,11 @@ export default async function ClientHomePage() {
                 y disfrutar de momentos inolvidables.
               </p>
             </div>
+          </div>
+          
+          {/* Mapa Interactivo */}
+          <div className="relative h-[400px] overflow-hidden rounded-lg lg:h-[500px] border shadow-md">
+            <CargadorDeMapa />
           </div>
         </div>
       </section>

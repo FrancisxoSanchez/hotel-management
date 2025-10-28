@@ -149,7 +149,7 @@ INSERT INTO "Reservation" ("id", "checkInDate", "checkOutDate", "status", "total
 -- R6: (Doble Std, 2 noches)
 ('R6', '2025-10-26 15:00:00', '2025-10-28 11:00:00', 'confirmada', 16000, 16000, false, false, '2025-10-11', '202', '4'),
 -- R7: (Suite Fam, 5 noches, B)
-('R7', '2025-10-26 15:00:00', '2025-10-31 11:00:00', 'confirmada', 100000, 50000, true, false, '2025-10-12', '204', '5'),
+('R7', '2025-10-26 15:00:00', '2025-10-31 11:00:00', 'confirmada', 100000, 100000, true, false, '2025-10-12', '204', '5'),
 -- R8: (Individual, 7 noches)
 ('R8', '2025-10-27 15:00:00', '2025-11-03 11:00:00', 'confirmada', 42000, 42000, false, false, '2025-10-15', '102', '1'),
 -- R9: (Suite Pres, 2 noches, B+S)

@@ -21,6 +21,7 @@ import { format, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay, isWithinI
 import { es } from "date-fns/locale";
 import { ChevronLeft, ChevronRight, X, Loader2, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ReservationDetailModal } from "@/components/ReservaDetalleModal";
 
 // --- Tipos de datos de la API ---
 type ApiRoom = Room & {
@@ -52,6 +53,7 @@ export default function CalendarioPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [statusFilter, setStatusFilter] = useState<ReservationStatus | "all">("all");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [selectedReservationId, setSelectedReservationId] = useState<string | null>(null);
 
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
   const [reservations, setReservations] = useState<ApiReservation[]>([]);
@@ -70,41 +72,41 @@ export default function CalendarioPage() {
 
   // Cargar datos de la API
   useEffect(() => {
-    const fetchCalendarData = async () => {
-      setLoading(true);
-      setError(null);
-
-      try {
-        const params = new URLSearchParams({
-          startDate: dateRange.start.toISOString(),
-          endDate: dateRange.end.toISOString(),
-        });
-
-        const response = await fetch(`/api/operador/calendario?${params}`);
-
-        if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || "No se pudieron cargar los datos");
-        }
-
-        const data = await response.json();
-        setRooms(data.rooms);
-        setReservations(data.reservations);
-
-      } catch (err: any) {
-        setError(err.message);
-        toast({
-          title: "Error de Carga",
-          description: err.message,
-          variant: "destructive",
-        });
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchCalendarData();
   }, [dateRange, toast]);
+
+  const fetchCalendarData = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams({
+        startDate: dateRange.start.toISOString(),
+        endDate: dateRange.end.toISOString(),
+      });
+
+      const response = await fetch(`/api/operador/calendario?${params}`);
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || "No se pudieron cargar los datos");
+      }
+
+      const data = await response.json();
+      setRooms(data.rooms);
+      setReservations(data.reservations);
+
+    } catch (err: any) {
+      setError(err.message);
+      toast({
+        title: "Error de Carga",
+        description: err.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Filtrar reservas según el filtro de estado
   const filteredReservations = useMemo(() => {
@@ -142,7 +144,7 @@ export default function CalendarioPage() {
     if (!reservationId) return;
 
     try {
-      const response = await fetch(`/api/operador/reservas/${reservationId}/cancelar`, {
+      const response = await fetch(`/api/operador/reservas/${reservationId}/cancel`, {
         method: "POST",
       });
 
@@ -196,7 +198,7 @@ export default function CalendarioPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-16 py-8">
       <div className="mb-8">
         <h1 className="mb-2 text-3xl font-bold">Calendario de Reservas</h1>
         <p className="text-muted-foreground">Vista de grilla por habitación y día</p>
@@ -300,9 +302,10 @@ export default function CalendarioPage() {
                         <div
                           key={day.toISOString()}
                           className={cn(
-                            "relative min-h-[80px] rounded-lg border p-2 text-xs",
-                            reservation ? getStatusColor(reservation.status) : "bg-card",
+                            "relative min-h-[80px] rounded-lg border p-2 text-xs cursor-pointer transition-colors",
+                            reservation ? getStatusColor(reservation.status) : "bg-card hover:bg-muted/50",
                           )}
+                          onClick={() => reservation && setSelectedReservationId(reservation.id)}
                         >
                           {reservation && (
                             <div className="flex h-full flex-col justify-between">
@@ -328,8 +331,11 @@ export default function CalendarioPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-5 w-5 p-0 text-destructive"
-                                    onClick={() => setCancellingId(reservation.id)}
+                                    className="h-5 w-5 p-0 text-destructive hover:bg-destructive/10"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setCancellingId(reservation.id);
+                                    }}
                                   >
                                     <X className="h-3 w-3" />
                                   </Button>
@@ -383,6 +389,17 @@ export default function CalendarioPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Modal de Detalles de Reserva */}
+      <ReservationDetailModal
+        reservationId={selectedReservationId}
+        open={!!selectedReservationId}
+        onOpenChange={(open) => !open && setSelectedReservationId(null)}
+        onReservationCancelled={() => {
+          // Recargar el calendario después de cancelar
+          fetchCalendarData();
+        }}
+      />
     </div>
   );
 }
