@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import {
   updateRoomType,
-  updateRoomStatus,
+  setRoomStatusSafe, // ✅ Cambiado de updateRoomStatus a setRoomStatusSafe
   deleteRoom,
 } from "@/prisma/gerencia-habitaciones"
 import { RoomStatus } from "@prisma/client"
@@ -58,10 +58,20 @@ export async function PATCH(
       )
     }
 
-    const updatedRoom = await updateRoomStatus(id, validation.data.status)
+    // ✅ Usamos setRoomStatusSafe en lugar de updateRoomStatus
+    const updatedRoom = await setRoomStatusSafe(id, validation.data.status)
     return NextResponse.json({ success: true, room: updatedRoom })
   } catch (error: any) {
     console.error("[API_HABITACION_PATCH]", error)
+    
+    // ✅ Manejamos el error específico de reservas activas
+    if (error.message.includes("reservas activas")) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 409 } // Conflict
+      )
+    }
+    
     return NextResponse.json(
       { error: "Error al actualizar el estado", message: error.message },
       { status: 500 }

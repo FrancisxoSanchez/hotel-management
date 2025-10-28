@@ -1,13 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import type { ReservationStatus } from "@prisma/client";
 
-/**
- * Obtiene los datos necesarios para la grilla del calendario del operador.
- * Trae todas las habitaciones físicas y las reservas activas en un rango de fechas.
- */
 export async function getCalendarData(startDate: Date, endDate: Date) {
   // 1. Obtener todas las habitaciones físicas, ordenadas por ID (ej: 101, 102, 201)
-  // Incluimos el nombre del "tipo" de habitación para poder mostrarlas
   const rooms = await prisma.room.findMany({
     orderBy: {
       id: "asc",
@@ -22,15 +17,11 @@ export async function getCalendarData(startDate: Date, endDate: Date) {
   });
 
   // 2. Obtener todas las reservas que se superponen con el rango de fechas
-  // y que no estén canceladas.
   const reservations = await prisma.reservation.findMany({
     where: {
       status: {
-        notIn: ["cancelada"], // Omitimos reservas ya canceladas
+        notIn: ["cancelada"],
       },
-      // Lógica de superposición:
-      // La reserva comienza ANTES de que termine el rango Y
-      // la reserva termina DESPUÉS de que comience el rango.
       checkInDate: {
         lt: endDate,
       },
@@ -39,14 +30,12 @@ export async function getCalendarData(startDate: Date, endDate: Date) {
       },
     },
     include: {
-      // Traemos el primer huésped para mostrar su nombre
       guests: {
         select: {
           name: true,
         },
         take: 1,
       },
-      // Traemos la habitación para saber su ID
       room: {
         select: {
           id: true,
@@ -55,7 +44,28 @@ export async function getCalendarData(startDate: Date, endDate: Date) {
     },
   });
 
-  return { rooms, reservations };
+  const reservationsFormatted = reservations.map((reservation) => ({
+    ...reservation,
+    // Convertimos a ISO string pero manteniendo la fecha local (sin offset UTC)
+    checkInDate: formatDateToLocalISO(reservation.checkInDate),
+    checkOutDate: formatDateToLocalISO(reservation.checkOutDate),
+    roomId: reservation.room.id,
+  }));
+
+  return { rooms, reservations: reservationsFormatted };
+}
+
+
+function formatDateToLocalISO(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  
+  // Formato: YYYY-MM-DDTHH:mm:ss (sin la Z del UTC)
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
 }
 
 /**
@@ -70,23 +80,16 @@ export async function cancelReservationById(reservationId: string) {
       data: {
         status: "cancelada",
         cancelledAt: new Date(),
-        // Opcionalmente: actualizar estado de la habitación si es necesario
-        // Esto depende de tu lógica de negocio (ej: si pasa a "limpieza")
-        // room: {
-        //   update: {
-        //     status: "limpieza" 
-        //   }
-        // }
       },
     });
 
-    // También debemos actualizar la habitación física que estaba 'ocupada'
+    // Actualizar la habitación física que estaba ocupada
     await prisma.room.update({
       where: {
         id: updatedReservation.roomId
       },
       data: {
-        status: "disponible" // o "limpieza"
+        status: "disponible"
       }
     });
 

@@ -49,15 +49,15 @@ export function ClientFooter() {
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li className="flex items-center gap-2">
                 <Phone className="h-4 w-4" />
-                <span>+54 11 5555-0000</span>
+                <span>+54 387 421-0000</span>
               </li>
               <li className="flex items-center gap-2">
                 <Mail className="h-4 w-4" />
-                <span>info@hotelgrandvista.com</span>
+                <span>GrandVistaH@gmail.com</span>
               </li>
               <li className="flex items-start gap-2">
                 <MapPin className="h-4 w-4 mt-0.5" />
-                <span>Av. Principal 1234, Buenos Aires, Argentina</span>
+                <span>Balcarce 252, Salta, Argentina</span>
               </li>
             </ul>
           </div>

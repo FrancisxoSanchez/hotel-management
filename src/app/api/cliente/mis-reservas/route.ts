@@ -40,9 +40,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// 🔥 Esquema corregido: acepta cualquier string, no solo cuid()
 const cancelSchema = z.object({
-  reservationId: z.string().cuid(),
-  userId: z.string().cuid(),
+  reservationId: z.string().min(1, "ID de reserva requerido"),
+  userId: z.string().min(1, "ID de usuario requerido"),
 });
 
 /**

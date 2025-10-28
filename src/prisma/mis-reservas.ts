@@ -38,7 +38,7 @@ export async function getUserReservations(userId: string) {
 }
 
 /**
- * Cancela una reserva (solo si está pendiente o confirmada)
+ * Cancela una reserva (solo si está pendiente o confirmada y el check-in no ha pasado)
  */
 export async function cancelReservation(reservationId: string, userId: string) {
   // Verificar que la reserva existe y pertenece al usuario
@@ -53,7 +53,7 @@ export async function cancelReservation(reservationId: string, userId: string) {
   });
 
   if (!reservation) {
-    throw new Error("Reserva no encontrada");
+    throw new Error("Reserva no encontrada o no pertenece a este usuario");
   }
 
   if (reservation.status === "cancelada") {
@@ -68,7 +68,10 @@ export async function cancelReservation(reservationId: string, userId: string) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   
-  if (reservation.checkInDate < today) {
+  const checkInDate = new Date(reservation.checkInDate);
+  checkInDate.setHours(0, 0, 0, 0);
+  
+  if (checkInDate < today) {
     throw new Error("No se puede cancelar una reserva cuyo check-in ya pasó");
   }
 
@@ -91,11 +94,23 @@ export async function cancelReservation(reservationId: string, userId: string) {
       },
     });
 
-    // Liberar la habitación (volver a estado disponible)
-    await tx.room.update({
-      where: { id: reservation.roomId },
-      data: { status: "disponible" },
+    // Liberar la habitación solo si estaba ocupada por esta reserva
+    // (No liberar si hay otras reservas activas)
+    const otherActiveReservations = await tx.reservation.count({
+      where: {
+        roomId: reservation.roomId,
+        status: { in: ["pendiente", "confirmada"] },
+        id: { not: reservationId }, // Excluir la que estamos cancelando
+      },
     });
+
+    // Solo liberar si no hay otras reservas activas
+    if (otherActiveReservations === 0) {
+      await tx.room.update({
+        where: { id: reservation.roomId },
+        data: { status: "disponible" },
+      });
+    }
 
     return updatedReservation;
   });

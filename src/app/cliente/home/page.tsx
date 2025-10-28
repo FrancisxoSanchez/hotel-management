@@ -1,9 +1,3 @@
-// CORRECCIÓN: Eliminamos "use client". Esto convierte el archivo en un Componente de Servidor.
-// "use client" <--- ELIMINADO
-
-// CORRECCIÓN: Eliminamos las importaciones de 'next/link' y 'next/image'
-// import Link from 'next/link';
-// import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -14,10 +8,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-
-// CORRECCIÓN: Revertimos la ruta de importación al alias (@)
-// ya que "@/components" parece funcionar, "@/prisma" también debería.
-import type { FeaturedRoom, FeaturedAmenity } from '@/prisma/home';
 import { getHomePageData } from '@/prisma/home'; 
 
 import { Users, Sparkles, Phone, Mail } from 'lucide-react';
@@ -32,15 +22,13 @@ export default async function ClientHomePage() {
     <div className="flex flex-col">
       {/* Hero Section */}
       <section className="relative h-[600px] w-full overflow-hidden">
-        {/* CORRECCIÓN: Reemplazado <Image> con <img> y ELIMINADO onError */}
         <img
           src="/luxury-hotel-suite-bedroom.jpg"
           alt="Hotel Grand Vista"
           className="absolute inset-0 h-full w-full object-cover"
-          loading="eager" // Reemplazo de 'priority'
+          loading="eager" 
         />
         <div className="absolute inset-0 bg-gradient-to-r from-black/70 to-black/30" />
-        {/* AJUSTE: Añadido max-w-7xl */}
         <div className="container max-w-7xl relative mx-auto flex h-full items-center px-4">
           <div className="max-w-2xl space-y-6 text-white">
             <Badge className="bg-accent text-accent-foreground">
@@ -55,7 +43,6 @@ export default async function ClientHomePage() {
               excepcional.
             </p>
             <div className="flex flex-wrap gap-4">
-              {/* CORRECCIÓN: Reemplazado <Link> con <a> */}
               <Button asChild size="lg" className="bg-accent hover:bg-accent/90">
                 <a href="/cliente/habitaciones">Ver Habitaciones</a>
               </Button>
@@ -73,7 +60,6 @@ export default async function ClientHomePage() {
       </section>
 
       {/* Featured Rooms */}
-      {/* AJUSTE: Añadido max-w-7xl */}
       <section className="container max-w-7xl mx-auto px-4 py-16">
         <div className="mb-12 text-center">
           <h2 className="mb-4 text-3xl font-bold md:text-4xl">
@@ -90,7 +76,6 @@ export default async function ClientHomePage() {
             {featuredRooms.map((room) => (
               <Card key={room.id} className="overflow-hidden">
                 <div className="relative h-64 w-full">
-                  {/* CORRECCIÓN: Reemplazado <Image> con <img> y ELIMINADO onError */}
                   <img
                     src={room.images[0] || 'https://placehold.co/600x400/EEE/333?text=Habitacion'}
                     alt={room.name}
@@ -120,14 +105,6 @@ export default async function ClientHomePage() {
                     </span>
                   </div>
                 </CardContent>
-                <CardFooter>
-                  {/* CORRECCIÓN: Reemplazado <Link> con <a> */}
-                  <Button asChild className="w-full">
-                    <a href={`/cliente/habitaciones/${room.id}`}>
-                      Ver Detalles
-                    </a>
-                  </Button>
-                </CardFooter>
               </Card>
             ))}
           </div>
@@ -138,7 +115,6 @@ export default async function ClientHomePage() {
         )}
 
         <div className="mt-12 text-center">
-          {/* CORRECCIÓN: Reemplazado <Link> con <a> */}
           <Button asChild size="lg" variant="outline">
             <a href="/cliente/habitaciones">Ver Todas las Habitaciones</a>
           </Button>
@@ -147,7 +123,6 @@ export default async function ClientHomePage() {
 
       {/* Amenities Section */}
       <section className="bg-muted/30 py-16">
-        {/* AJUSTE: Añadido max-w-7xl */}
         <div className="container max-w-7xl mx-auto px-4">
           <div className="mb-12 text-center">
             <h2 className="mb-4 text-3xl font-bold md:text-4xl">
@@ -164,7 +139,6 @@ export default async function ClientHomePage() {
               {featuredAmenities.map((amenity) => (
                 <Card key={amenity.id} className="overflow-hidden">
                   <div className="relative h-48 w-full">
-                    {/* CORRECCIÓN: Reemplazado <Image> con <img> y ELIMINADO onError */}
                     <img
                       src={amenity.images[0] || 'https://placehold.co/600x400/EEE/333?text=Instalacion'}
                       alt={amenity.name}
@@ -191,7 +165,6 @@ export default async function ClientHomePage() {
           )}
 
           <div className="mt-12 text-center">
-            {/* CORRECCIÓN: Reemplazado <Link> con <a> */}
             <Button asChild size="lg" variant="outline">
               <a href="/cliente/amenities">
                 Ver Todas las Instalaciones
@@ -202,11 +175,9 @@ export default async function ClientHomePage() {
       </section>
 
       {/* About Section */}
-      {/* AJUSTE: Añadido max-w-7xl */}
       <section className="container max-w-7xl mx-auto px-4 py-16">
         <div className="grid gap-12 lg:grid-cols-2 lg:items-center">
           <div className="relative h-[400px] overflow-hidden rounded-lg lg:h-[500px]">
-            {/* CORRECCIÓN: Reemplazado <Image> con <img> y ELIMINADO onError */}
             <img
               src="/elegant-hotel-restaurant.jpg"
               alt="Sobre nosotros"
@@ -224,7 +195,6 @@ export default async function ClientHomePage() {
                 ofrece fácil acceso a las principales atracciones turísticas y
                 centros de negocios.
               </p> 
-              {/* CORRECCIÓN: Cambiado </LIGHT> por </p> */}
               <p className="text-pretty">
                 Con más de 20 años de experiencia en la industria hotelera, nos
                 enorgullecemos de ofrecer habitaciones impecables,
@@ -243,7 +213,6 @@ export default async function ClientHomePage() {
 
       {/* Contact Section */}
       <section className="bg-primary py-16 text-primary-foreground">
-        {/* AJUSTE: Añadido max-w-7xl */}
         <div className="container max-w-7xl mx-auto px-4 text-center">
           <h2 className="mb-4 text-3xl font-bold md:text-4xl">
             ¿Tienes Alguna Pregunta?
@@ -260,12 +229,11 @@ export default async function ClientHomePage() {
             <div className="flex items-center gap-2">
               <Mail className="h-5 w-5" />
               <span className="text-lg font-medium">
-                info@hotelgrandvista.com
+                GranVistaH@gmail.com
               </span>
             </div>
           </div>
           <div className="mt-8">
-            {/* CORRECCIÓN: Reemplazado <Link> con <a> */}
             <Button asChild size="lg" variant="secondary">
               <a href="/cliente/consultas">Enviar Consulta</a>
             </Button>

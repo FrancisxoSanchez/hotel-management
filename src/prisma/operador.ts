@@ -18,10 +18,9 @@ export type FullRoomOperador = Room & {
 export async function getRoomsForOperator(): Promise<FullRoomOperador[]> {
   return prisma.room.findMany({
     include: {
-      roomType: true, // Incluimos la info del tipo de habitación
+      roomType: true,
       _count: {
         select: {
-          // Contamos solo reservas que impiden el mantenimiento
           reservations: {
             where: {
               status: { in: ["pendiente", "confirmada"] },
@@ -31,18 +30,19 @@ export async function getRoomsForOperator(): Promise<FullRoomOperador[]> {
       },
     },
     orderBy: {
-      id: "asc", // Ordenar por número de habitación
+      id: "asc",
     },
   })
 }
 
 /**
  * Actualiza el estado de una habitación siguiendo las reglas del Operador.
+ * Si se cambia a 'mantenimiento', cancela automáticamente las reservas activas.
  *
  * REGLAS:
  * 1. Operador SÓLO puede cambiar a 'disponible' o 'mantenimiento'.
  * 2. Operador SÓLO puede cambiar habitaciones que estén en 'disponible', 'limpieza' o 'mantenimiento'.
- * 3. NO se puede poner en 'mantenimiento' si hay reservas activas.
+ * 3. Si se pone en 'mantenimiento' con reservas activas, las cancela automáticamente.
  */
 export async function setRoomStatusOperador(
   id: string,
@@ -89,14 +89,25 @@ export async function setRoomStatusOperador(
     )
   }
 
-  // Regla 3: No poner en mantenimiento si hay reservas
+  // 🔥 NUEVA LÓGICA: Si se pone en mantenimiento y hay reservas, cancelarlas
   if (newStatus === "mantenimiento" && activeReservations > 0) {
-    throw new Error(
-      "No se puede poner en mantenimiento. La habitación tiene reservas activas."
+    await prisma.reservation.updateMany({
+      where: {
+        roomId: id,
+        status: { in: ["pendiente", "confirmada"] },
+      },
+      data: {
+        status: "cancelada",
+        cancelledAt: new Date(),
+      },
+    })
+
+    console.log(
+      `[OPERADOR] Se cancelaron ${activeReservations} reserva(s) de la habitación ${id} por mantenimiento.`
     )
   }
 
-  // Si todas las reglas pasan, actualizar
+  // Actualizar el estado de la habitación
   return prisma.room.update({
     where: { id },
     data: { status: newStatus },

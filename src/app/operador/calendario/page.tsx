@@ -23,26 +23,29 @@ import { ChevronLeft, ChevronRight, X, Loader2, AlertCircle } from "lucide-react
 import { cn } from "@/lib/utils";
 
 // --- Tipos de datos de la API ---
-// Definimos los tipos basados en lo que devuelve la API
-
-// Habitación física con su tipo de habitación (para el nombre)
 type ApiRoom = Room & {
   roomType: {
     name: string;
   };
 };
 
-// Reserva con el nombre del huésped y el ID de la habitación
 type ApiReservation = {
   id: string;
-  roomId: string; // ID de la habitación física (ej: "101")
-  checkInDate: string;  // Viene como string ISO de la API
-  checkOutDate: string; // Viene como string ISO de la API
+  roomId: string;
+  checkInDate: string;
+  checkOutDate: string;
   status: ReservationStatus;
   guests: {
     name: string;
   }[];
 };
+
+function parseDate(dateString: string): Date {
+  if (dateString.includes('Z') || dateString.match(/[+-]\d{2}:\d{2}$/)) {
+    return parseISO(dateString);
+  }
+  return parseISO(dateString);
+}
 
 export default function CalendarioPage() {
   const { toast } = useToast();
@@ -50,7 +53,6 @@ export default function CalendarioPage() {
   const [statusFilter, setStatusFilter] = useState<ReservationStatus | "all">("all");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
-  // --- Estados para datos de la API ---
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
   const [reservations, setReservations] = useState<ApiReservation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,7 +68,7 @@ export default function CalendarioPage() {
 
   const days = eachDayOfInterval(dateRange);
 
-  // --- Efecto para cargar datos de la API ---
+  // Cargar datos de la API
   useEffect(() => {
     const fetchCalendarData = async () => {
       setLoading(true);
@@ -102,35 +104,40 @@ export default function CalendarioPage() {
     };
 
     fetchCalendarData();
-  }, [dateRange, toast]); // Recargar cuando cambie el rango de fechas
+  }, [dateRange, toast]);
 
   // Filtrar reservas según el filtro de estado
   const filteredReservations = useMemo(() => {
     return reservations.filter((r) => {
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
-      if (r.status === "cancelada") return false; // Ya no deberíamos recibirlas, pero por si acaso
+      if (r.status === "cancelada") return false;
       return true;
     });
   }, [reservations, statusFilter]);
 
-  // Encontrar la reserva para una celda (habitación + día)
   const getReservationForCell = (roomId: string, day: Date) => {
     return filteredReservations.find((r) => {
       if (r.roomId !== roomId) return false;
       
-      // Parsear fechas ISO una vez
-      const checkIn = parseISO(r.checkInDate);
-      const checkOut = parseISO(r.checkOutDate);
+      // Parsear fechas usando nuestra función segura
+      const checkIn = parseDate(r.checkInDate);
+      const checkOut = parseDate(r.checkOutDate);
 
-      // Lógica de intervalo:
-      // Está dentro si el día es >= check-in Y el día es < check-out
-      // Usamos isWithinInterval pero ajustando el end-date
-      // ya que un check-out el día 10 significa que la noche del 9 está ocupada
-      return isWithinInterval(day, { start: checkIn, end: new Date(checkOut.getTime() - 1) });
+      // Normalizar las fechas a medianoche para comparación correcta
+      const dayStart = new Date(day);
+      dayStart.setHours(0, 0, 0, 0);
+      
+      const checkInStart = new Date(checkIn);
+      checkInStart.setHours(0, 0, 0, 0);
+      
+      const checkOutStart = new Date(checkOut);
+      checkOutStart.setHours(0, 0, 0, 0);
+
+      return dayStart >= checkInStart && dayStart < checkOutStart;
     });
   };
 
-  // Manejar cancelación de reserva llamando a la API
+  // Manejar cancelación de reserva
   const handleCancelReservation = async (reservationId: string) => {
     if (!reservationId) return;
 
@@ -140,22 +147,16 @@ export default function CalendarioPage() {
       });
 
       if (!response.ok) {
-        // --- MODIFICACIÓN AQUÍ ---
-        // Vamos a leer el cuerpo del error que nos manda la API
         let errorDetails = "No se pudo cancelar la reserva";
         try {
           const errData = await response.json();
-          // Si la API nos da un 'error' o 'details', lo usamos
           errorDetails = errData.error || errData.message || JSON.stringify(errData);
         } catch (e) {
-          // Si el cuerpo no es JSON, usamos el texto de status
           errorDetails = response.statusText;
         }
         
-        // Logueamos el error detallado en la consola del navegador
         console.error("[CANCEL_RESERVATION_ERROR]", errorDetails);
-        throw new Error(errorDetails); // Lanzamos el error específico
-        // --- FIN DE LA MODIFICACIÓN ---
+        throw new Error(errorDetails);
       }
 
       toast({
@@ -163,7 +164,6 @@ export default function CalendarioPage() {
         description: "La reserva ha sido cancelada exitosamente",
       });
 
-      // Actualizar UI: O se vuelve a cargar todo, o se saca la reserva del estado
       setReservations((prev) => prev.filter((r) => r.id !== reservationId));
 
     } catch (err: any) {
@@ -183,7 +183,7 @@ export default function CalendarioPage() {
       pendiente: "bg-yellow-500/20 border-yellow-500",
       confirmada: "bg-green-500/20 border-green-500",
       finalizada: "bg-gray-500/20 border-gray-500",
-      cancelada: "bg-red-500/20 border-red-500", // No debería mostrarse
+      cancelada: "bg-red-500/20 border-red-500",
     };
     return colors[status];
   };
@@ -279,24 +279,22 @@ export default function CalendarioPage() {
             </div>
           )}
 
-          {/* Filas de la grilla por cada habitación */}
+          {/* Filas de la grilla */}
           {!loading && !error && (
             <div className="space-y-1">
               {rooms.map((room) => {
-                const roomName = `${room.roomType.name} ${room.id}`; // Ej: "Standard 101"
+                const roomName = `${room.roomType.name} ${room.id}`;
                 
                 return (
                   <div key={room.id} className="grid grid-cols-8 gap-1">
-                    {/* Celda con nombre de habitación */}
                     <div className="sticky left-0 z-10 flex items-center rounded-lg border bg-card p-3 text-sm font-medium">
                       {roomName}
                     </div>
 
-                    {/* Celdas de días */}
                     {days.map((day) => {
                       const reservation = getReservationForCell(room.id, day);
-                      const isCheckIn = reservation && isSameDay(parseISO(reservation.checkInDate), day);
-                      const isCheckOut = reservation && isSameDay(parseISO(reservation.checkOutDate), day);
+                      const isCheckIn = reservation && isSameDay(parseDate(reservation.checkInDate), day);
+                      const isCheckOut = reservation && isSameDay(parseDate(reservation.checkOutDate), day);
 
                       return (
                         <div
@@ -368,7 +366,7 @@ export default function CalendarioPage() {
         </CardContent>
       </Card>
 
-      {/* Modal de Confirmación de Cancelación */}
+      {/* Modal de Confirmación */}
       <AlertDialog open={!!cancellingId} onOpenChange={() => setCancellingId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

@@ -23,7 +23,7 @@ import type { RoomStatus } from "@prisma/client"
 import { FullRoomOperador } from "@/prisma/operador-habitaciones"
 import { Loader2, BedDouble, AlertCircle } from "lucide-react"
 
-// --- NUEVA LÓGICA DE ESTADOS ---
+// --- LÓGICA DE ESTADOS ---
 // Estados que el operador puede SELECCIONAR en el dropdown
 const selectableStatus: RoomStatus[] = ["disponible", "mantenimiento"]
 // Estados que permiten la INTERACCIÓN (si no está en esta lista, se bloquea)
@@ -32,7 +32,6 @@ const editableStatus: RoomStatus[] = [
   "limpieza",
   "mantenimiento",
 ]
-// --- FIN DE NUEVA LÓGICA ---
 
 export default function OperadorHabitacionesPage() {
   const [rooms, setRooms] = useState<FullRoomOperador[]>([])
@@ -63,6 +62,22 @@ export default function OperadorHabitacionesPage() {
   }, [toast])
 
   const handleStatusChange = async (roomId: string, newStatus: RoomStatus) => {
+    const room = rooms.find((r) => r.id === roomId)
+    const hasActiveReservations = room?._count.reservations || 0
+
+    // Si tiene reservas y va a mantenimiento, mostrar advertencia
+    if (newStatus === "mantenimiento" && hasActiveReservations > 0) {
+      const confirmed = window.confirm(
+        `⚠️ Esta habitación tiene ${hasActiveReservations} reserva(s) activa(s).\n\n` +
+        `Si continúas, todas las reservas serán CANCELADAS automáticamente.\n\n` +
+        `¿Deseas continuar con el mantenimiento?`
+      )
+      
+      if (!confirmed) {
+        return // El usuario canceló la operación
+      }
+    }
+
     const originalRooms = rooms
     // Optimistic update
     setRooms((prevRooms) =>
@@ -81,13 +96,18 @@ export default function OperadorHabitacionesPage() {
       const data = await response.json()
 
       if (!response.ok) {
-        // Lanzar el error con el mensaje de la API
         throw new Error(data.message || "Error al actualizar")
       }
 
+      // Mensaje personalizado si se cancelaron reservas
+      const message = 
+        newStatus === "mantenimiento" && hasActiveReservations > 0
+          ? `Habitación ${roomId} en mantenimiento. Se cancelaron ${hasActiveReservations} reserva(s).`
+          : `Habitación ${roomId} actualizada a ${newStatus}.`
+
       toast({
         title: "Éxito",
-        description: `Habitación ${roomId} actualizada a ${newStatus}.`,
+        description: message,
       })
 
       // Sincronizar el estado final desde la respuesta
@@ -97,7 +117,6 @@ export default function OperadorHabitacionesPage() {
     } catch (err: any) {
       toast({
         title: "Error al actualizar",
-        // Mostrar el error específico de la API (ej. "reservas activas")
         description: err.message,
         variant: "destructive",
       })
@@ -191,30 +210,35 @@ export default function OperadorHabitacionesPage() {
                 )}
               </CardContent>
               <CardFooter>
-                <Select
-                  value={room.status}
-                  onValueChange={(newStatus) =>
-                    handleStatusChange(room.id, newStatus as RoomStatus)
-                  }
-                  // --- BLOQUEO DEL SELECT ---
-                  disabled={isLocked}
-                >
-                  <SelectTrigger
-                    className={`w-full ${
-                      isLocked ? "cursor-not-allowed" : ""
-                    }`}
+                {isLocked ? (
+                  // 🔥 Cuando está bloqueado, mostramos el estado actual en un Select deshabilitado
+                  <Select value={room.status} disabled>
+                    <SelectTrigger className="w-full cursor-not-allowed">
+                      <SelectValue>
+                        {room.status.charAt(0).toUpperCase() + room.status.slice(1)}
+                      </SelectValue>
+                    </SelectTrigger>
+                  </Select>
+                ) : (
+                  // Cuando no está bloqueado, mostramos el Select normal
+                  <Select
+                    value={room.status}
+                    onValueChange={(newStatus) =>
+                      handleStatusChange(room.id, newStatus as RoomStatus)
+                    }
                   >
-                    <SelectValue placeholder="Cambiar estado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {/* --- OPCIONES RESTRINGIDAS --- */}
-                    {selectableStatus.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {status.charAt(0).toUpperCase() + status.slice(1)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Cambiar estado" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {selectableStatus.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {status.charAt(0).toUpperCase() + status.slice(1)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </CardFooter>
             </Card>
           )

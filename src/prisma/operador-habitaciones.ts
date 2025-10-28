@@ -13,7 +13,6 @@ export type FullRoomOperador = Room & {
 
 /**
  * Obtiene todas las habitaciones físicas con su tipo y conteo de reservas activas.
- * (Esta función no necesita cambios)
  */
 export async function getRoomsWithTypes(): Promise<FullRoomOperador[]> {
   return prisma.room.findMany({
@@ -37,14 +36,13 @@ export async function getRoomsWithTypes(): Promise<FullRoomOperador[]> {
 }
 
 /**
- * (MODIFICADA) Actualiza el estado de una habitación con las reglas del Operador.
+ * Actualiza el estado de una habitación con las reglas del Operador.
+ * Si se cambia a 'mantenimiento', cancela automáticamente las reservas activas.
  */
 export async function updateRoomStatus(
   id: string,
   newStatus: RoomStatus
 ): Promise<FullRoomOperador> {
-  // --- INICIO DE NUEVA LÓGICA ---
-
   // Regla 1: Validar el estado de DESTINO (solo 'disponible' o 'mantenimiento')
   if (newStatus !== "disponible" && newStatus !== "mantenimiento") {
     throw new Error(
@@ -76,25 +74,36 @@ export async function updateRoomStatus(
     )
   }
 
-  // --- FIN DE NUEVA LÓGICA ---
-
-  // Regla 3: Lógica de negocio (la que ya tenías)
+  // 🔥 NUEVA LÓGICA: Si se pone en mantenimiento, cancelar reservas activas
   if (newStatus === "mantenimiento") {
-    const activeReservations = await prisma.reservation.count({
+    const activeReservations = await prisma.reservation.findMany({
       where: {
         roomId: id,
         status: { in: ["pendiente", "confirmada"] },
       },
+      select: { id: true },
     })
 
-    if (activeReservations > 0) {
-      throw new Error(
-        "No se puede poner en mantenimiento. La habitación tiene reservas activas."
+    if (activeReservations.length > 0) {
+      // Cancelar todas las reservas activas en una transacción
+      await prisma.reservation.updateMany({
+        where: {
+          roomId: id,
+          status: { in: ["pendiente", "confirmada"] },
+        },
+        data: {
+          status: "cancelada",
+          cancelledAt: new Date(),
+        },
+      })
+
+      console.log(
+        `[OPERADOR] Se cancelaron ${activeReservations.length} reserva(s) de la habitación ${id} por mantenimiento.`
       )
     }
   }
 
-  // Si todo pasa, actualizar
+  // Actualizar el estado de la habitación
   return prisma.room.update({
     where: { id },
     data: { status: newStatus },

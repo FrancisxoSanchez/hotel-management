@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/lib/auth-context"
-import { Calendar, Users, CreditCard, X, Loader2, Home } from "lucide-react"
+import { Calendar, Users, CreditCard, X, Loader2, Home, CheckCircle } from "lucide-react"
 
 interface ReservationData {
   id: string
@@ -147,6 +147,21 @@ export default function MisReservasPage() {
     return <Badge variant={config.variant}>{config.label}</Badge>
   }
 
+  // Función para determinar si se puede cancelar
+  const canCancelReservation = (reservation: ReservationData): boolean => {
+    if (reservation.status !== "pendiente") {
+      return false
+    }
+    
+    // Verificar que el check-in no haya pasado
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const checkInDate = new Date(reservation.checkInDate)
+    checkInDate.setHours(0, 0, 0, 0)
+    
+    return checkInDate >= today
+  }
+
   // Loading state
   if (isAuthLoading || isLoading) {
     return (
@@ -208,98 +223,130 @@ export default function MisReservasPage() {
       </div>
 
       <div className="space-y-6">
-        {reservations.map((reservation) => (
-          <Card key={reservation.id}>
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Home className="h-5 w-5" />
-                    {reservation.room.roomType.name} - Habitación {reservation.room.id}
-                  </CardTitle>
-                  <CardDescription>
-                    Creada el {format(new Date(reservation.createdAt), "d 'de' MMMM, yyyy", { locale: es })}
-                  </CardDescription>
-                </div>
-                {getStatusBadge(reservation.status)}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                    <Calendar className="h-5 w-5 text-primary" />
-                  </div>
+        {reservations.map((reservation) => {
+          return (
+            <Card key={reservation.id}>
+              <CardHeader>
+                <div className="flex items-start justify-between">
                   <div>
-                    <p className="text-sm font-medium">Check-in</p>
-                    <p className="text-sm text-muted-foreground">
-                      {format(new Date(reservation.checkInDate), "d MMM yyyy", { locale: es })}
+                    <CardTitle className="flex items-center gap-2">
+                      <Home className="h-5 w-5" />
+                      {reservation.room.roomType.name} - Habitación {reservation.room.id}
+                    </CardTitle>
+                    <CardDescription>
+                      Creada el {format(new Date(reservation.createdAt), "d 'de' MMMM, yyyy", { locale: es })}
+                    </CardDescription>
+                  </div>
+                  {getStatusBadge(reservation.status)}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <Calendar className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Check-in</p>
+                      <p className="text-sm text-muted-foreground">
+                        {format(new Date(reservation.checkInDate), "d MMM yyyy", { locale: es })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <Calendar className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Check-out</p>
+                      <p className="text-sm text-muted-foreground">
+                        {format(new Date(reservation.checkOutDate), "d MMM yyyy", { locale: es })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <Users className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Huéspedes</p>
+                      <p className="text-sm text-muted-foreground">{reservation.guests.length} personas</p>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                      <CreditCard className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">Total</p>
+                      <p className="text-sm text-muted-foreground">${reservation.totalPrice.toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Estado: Pendiente (Reserva pagada, esperando check-in) */}
+                {reservation.status === "pendiente" && (
+                  <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-semibold text-green-900 dark:text-green-100">
+                          Pagado: ${reservation.depositPaid.toLocaleString()}
+                        </p>
+                        <p className="text-sm text-green-800 dark:text-green-200 mt-1">
+                          ¡Su reserva ya fue pagada. Lo esperamos!
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Estado: Confirmada (Huésped ya hizo check-in) */}
+                {reservation.status === "confirmada" && (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="font-semibold text-blue-900 dark:text-blue-100">
+                          Check-in realizado
+                        </p>
+                        <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
+                          ¡Disfrute su estadía en nuestro hotel!
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Estado: Cancelada */}
+                {reservation.status === "cancelada" && reservation.cancelledAt && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950">
+                    <p className="text-sm text-red-900 dark:text-red-100">
+                      Cancelada el {format(new Date(reservation.cancelledAt), "d 'de' MMMM, yyyy", { locale: es })}
                     </p>
                   </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                    <Calendar className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Check-out</p>
-                    <p className="text-sm text-muted-foreground">
-                      {format(new Date(reservation.checkOutDate), "d MMM yyyy", { locale: es })}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                    <Users className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Huéspedes</p>
-                    <p className="text-sm text-muted-foreground">{reservation.guests.length} personas</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                    <CreditCard className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium">Total</p>
-                    <p className="text-sm text-muted-foreground">${reservation.totalPrice.toLocaleString()}</p>
-                  </div>
-                </div>
-              </div>
-
-              {reservation.status === "pendiente" && (
-                <div className="rounded-lg border border-green-200 bg-green-50 p-4 dark:border-green-900 dark:bg-green-950">
-                  <p className="text-sm text-green-900 dark:text-green-100">
-                    <strong>Pago completado:</strong> ${reservation.depositPaid.toLocaleString()}
-                    <br />
-                    Tu reserva está confirmada y totalmente pagada.
+                )}
+              </CardContent>
+              <CardFooter className="flex gap-2">
+                {canCancelReservation(reservation) && (
+                  <Button 
+                    variant="destructive" 
+                    onClick={() => setCancellingId(reservation.id)}
+                    disabled={isCancelling}
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Cancelar Reserva
+                  </Button>
+                )}
+                {!canCancelReservation(reservation) && reservation.status === "pendiente" && (
+                  <p className="text-sm text-muted-foreground">
+                    No se puede cancelar (check-in pasado)
                   </p>
-                </div>
-              )}
-
-              {reservation.status === "cancelada" && reservation.cancelledAt && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950">
-                  <p className="text-sm text-red-900 dark:text-red-100">
-                    Cancelada el {format(new Date(reservation.cancelledAt), "d 'de' MMMM, yyyy", { locale: es })}
-                  </p>
-                </div>
-              )}
-            </CardContent>
-            <CardFooter className="flex gap-2">
-              {reservation.status === "pendiente" && (
-                <Button 
-                  variant="destructive" 
-                  onClick={() => setCancellingId(reservation.id)}
-                  disabled={isCancelling}
-                >
-                  <X className="mr-2 h-4 w-4" />
-                  Cancelar Reserva
-                </Button>
-              )}
-            </CardFooter>
-          </Card>
-        ))}
+                )}
+              </CardFooter>
+            </Card>
+          )
+        })}
       </div>
 
       <AlertDialog open={!!cancellingId} onOpenChange={() => !isCancelling && setCancellingId(null)}>
